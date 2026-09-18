@@ -31,6 +31,10 @@ const SETTINGS = {
     {
       name: "Mercer Oaks West Golf Course",
       url: "https://www.golfnow.com/courses/1041704-mercer-oaks-west-golf-course-details"
+    },
+    {
+      name: "Lakewood Country Club",
+      url: "https://www.golfnow.com/courses/1033804-lakewood-country-club-details"
     }
   ]
 };
@@ -67,45 +71,34 @@ function normalizeTime(value) {
 }
 
 function targetDateObject() {
-  const [year, month, day] =
-    SETTINGS.date.split("-").map(Number);
+  const [year, month, day] = SETTINGS.date
+    .split("-")
+    .map(Number);
 
-  return new Date(
-    year,
-    month - 1,
-    day,
-    12,
-    0,
-    0
-  );
+  return new Date(year, month - 1, day, 12, 0, 0);
 }
 
 function expectedDateText() {
   const d = targetDateObject();
 
-  const weekday = d.toLocaleDateString(
-    "en-US",
-    { weekday: "short" }
-  );
+  const weekday = d.toLocaleDateString("en-US", {
+    weekday: "short"
+  });
 
-  const month = d.toLocaleDateString(
-    "en-US",
-    { month: "short" }
-  );
+  const month = d.toLocaleDateString("en-US", {
+    month: "short"
+  });
 
   return `${weekday}, ${month} ${d.getDate()}`;
 }
 
 function expectedLongDateText() {
-  return targetDateObject().toLocaleDateString(
-    "en-US",
-    {
-      weekday: "long",
-      month: "long",
-      day: "numeric",
-      year: "numeric"
-    }
-  );
+  return targetDateObject().toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric"
+  });
 }
 
 function parseDisplayedDate(text) {
@@ -125,24 +118,16 @@ function parsedDisplayedDateObject(text) {
 
   if (!match) return null;
 
-  const year =
-    targetDateObject().getFullYear();
+  const year = targetDateObject().getFullYear();
 
   const parsed = new Date(
     `${match[2]} ${match[3]}, ${year} 12:00:00`
   );
 
-  return Number.isNaN(
-    parsed.getTime()
-  )
-    ? null
-    : parsed;
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-function dayDifference(
-  fromDate,
-  toDate
-) {
+function dayDifference(fromDate, toDate) {
   const a = new Date(
     fromDate.getFullYear(),
     fromDate.getMonth(),
@@ -156,15 +141,12 @@ function dayDifference(
   );
 
   return Math.round(
-    (b - a) /
-      (24 * 60 * 60 * 1000)
+    (b - a) / (24 * 60 * 60 * 1000)
   );
 }
 
 async function getPageText(page) {
-  return await page
-    .locator("body")
-    .innerText();
+  return await page.locator("body").innerText();
 }
 
 async function dismissPrivacy(page) {
@@ -177,122 +159,78 @@ async function dismissPrivacy(page) {
 
   for (const name of names) {
     try {
-      const button =
-        page
-          .getByRole(
-            "button",
-            { name }
-          )
-          .first();
+      const button = page
+        .getByRole("button", { name })
+        .first();
 
       if (
         await button.count() &&
         await button.isVisible()
       ) {
         await button.click();
-        await page.waitForTimeout(
-          700
-        );
-
+        await page.waitForTimeout(700);
         return;
       }
-
     } catch (_) {}
   }
 }
 
-async function getDisplayedDate(
-  page
-) {
+async function getDisplayedDate(page) {
   return parseDisplayedDate(
     await getPageText(page)
   );
 }
 
-async function getDisplayedDateObject(
-  page
-) {
+async function getDisplayedDateObject(page) {
   return parsedDisplayedDateObject(
     await getPageText(page)
   );
 }
 
-async function findDateNavigationContainer(
-  page
-) {
+async function findDateNavigationContainer(page) {
   const currentText =
-    await getDisplayedDate(
-      page
-    );
+    await getDisplayedDate(page);
 
-  if (!currentText) {
+  if (!currentText) return null;
+
+  const label = page
+    .getByText(currentText, { exact: true })
+    .first();
+
+  if (!(await label.count())) {
     return null;
   }
 
-  const label =
-    page
-      .getByText(
-        currentText,
-        { exact: true }
-      )
-      .first();
+  let container = label.locator("..");
 
-  if (
-    !(await label.count())
-  ) {
-    return null;
-  }
-
-  let container =
-    label.locator("..");
-
-  for (
-    let level = 0;
-    level < 7;
-    level++
-  ) {
+  for (let level = 0; level < 7; level++) {
     try {
       const controls =
         container.locator(
           'button, a, [role="button"]'
         );
 
-      if (
-        (await controls.count()) >= 2
-      ) {
+      if ((await controls.count()) >= 2) {
         return container;
       }
 
-      container =
-        container.locator("..");
-
+      container = container.locator("..");
     } catch (_) {}
   }
 
   return null;
 }
 
-async function clickDateArrow(
-  page,
-  direction
-) {
+async function clickDateArrow(page, direction) {
   const before =
-    await getDisplayedDate(
-      page
-    );
+    await getDisplayedDate(page);
 
-  if (!before) {
-    return false;
-  }
+  if (!before) return false;
 
   const container =
-    await findDateNavigationContainer(
-      page
-    );
+    await findDateNavigationContainer(page);
 
-  if (!container) {
-    return false;
-  }
+  if (!container) return false;
 
   const controls =
     container.locator(
@@ -304,35 +242,23 @@ async function clickDateArrow(
 
   const visible = [];
 
-  for (
-    let i = 0;
-    i < count;
-    i++
-  ) {
+  for (let i = 0; i < count; i++) {
     try {
       const item =
         controls.nth(i);
 
-      if (
-        !(await item.isVisible())
-      ) {
+      if (!(await item.isVisible())) {
         continue;
       }
 
       const aria =
-        (await item.getAttribute(
-          "aria-label"
-        )) || "";
+        (await item.getAttribute("aria-label")) || "";
 
       const title =
-        (await item.getAttribute(
-          "title"
-        )) || "";
+        (await item.getAttribute("title")) || "";
 
       const text =
-        await item
-          .innerText()
-          .catch(() => "");
+        await item.innerText().catch(() => "");
 
       visible.push({
         item,
@@ -341,36 +267,25 @@ async function clickDateArrow(
             .trim()
             .toLowerCase()
       });
-
     } catch (_) {}
   }
 
   let chosen = null;
 
-  for (
-    const candidate of visible
-  ) {
+  for (const candidate of visible) {
     if (
       direction === "next" &&
-      /(next|right|forward)/i.test(
-        candidate.label
-      )
+      /(next|right|forward)/i.test(candidate.label)
     ) {
-      chosen =
-        candidate.item;
-
+      chosen = candidate.item;
       break;
     }
 
     if (
       direction === "previous" &&
-      /(previous|prev|left|back)/i.test(
-        candidate.label
-      )
+      /(previous|prev|left|back)/i.test(candidate.label)
     ) {
-      chosen =
-        candidate.item;
-
+      chosen = candidate.item;
       break;
     }
   }
@@ -378,22 +293,17 @@ async function clickDateArrow(
   if (!chosen) {
     chosen =
       direction === "next"
-        ? visible[
-            visible.length - 1
-          ]?.item
+        ? visible[visible.length - 1]?.item
         : visible[0]?.item;
   }
 
-  if (!chosen) {
-    return false;
-  }
+  if (!chosen) return false;
 
   try {
     await chosen.click({
       force: true,
       timeout: 4000
     });
-
   } catch (error) {
     console.log(
       "Arrow click failed:",
@@ -406,17 +316,11 @@ async function clickDateArrow(
   const deadline =
     Date.now() + 7000;
 
-  while (
-    Date.now() < deadline
-  ) {
-    await page.waitForTimeout(
-      500
-    );
+  while (Date.now() < deadline) {
+    await page.waitForTimeout(500);
 
     const after =
-      await getDisplayedDate(
-        page
-      );
+      await getDisplayedDate(page);
 
     if (
       after &&
@@ -433,38 +337,25 @@ async function clickDateArrow(
   return false;
 }
 
-async function setCourseDateWithArrows(
-  page
-) {
+async function setCourseDateWithArrows(page) {
   const target =
     targetDateObject();
 
   let current =
-    await getDisplayedDateObject(
-      page
-    );
+    await getDisplayedDateObject(page);
 
-  if (!current) {
-    return false;
-  }
+  if (!current) return false;
 
   let diff =
-    dayDifference(
-      current,
-      target
-    );
+    dayDifference(current, target);
 
   console.log(
     `Moving ${diff} day(s) to ${expectedDateText()}`
   );
 
-  if (diff === 0) {
-    return true;
-  }
+  if (diff === 0) return true;
 
-  if (
-    Math.abs(diff) > 31
-  ) {
+  if (Math.abs(diff) > 31) {
     return false;
   }
 
@@ -485,22 +376,14 @@ async function setCourseDateWithArrows(
         direction
       );
 
-    if (!moved) {
-      return false;
-    }
+    if (!moved) return false;
 
-    await page.waitForTimeout(
-      900
-    );
+    await page.waitForTimeout(900);
 
     current =
-      await getDisplayedDateObject(
-        page
-      );
+      await getDisplayedDateObject(page);
 
-    if (!current) {
-      return false;
-    }
+    if (!current) return false;
 
     diff =
       dayDifference(
@@ -512,14 +395,9 @@ async function setCourseDateWithArrows(
   }
 
   const final =
-    await getDisplayedDate(
-      page
-    );
+    await getDisplayedDate(page);
 
-  return (
-    final ===
-    expectedDateText()
-  );
+  return final === expectedDateText();
 }
 
 async function clickViewTeeTimes(
@@ -533,49 +411,33 @@ async function clickViewTeeTimes(
   const candidates = [
     page.getByRole(
       "button",
-      {
-        name:
-          /^view tee times$/i
-      }
+      { name: /^view tee times$/i }
     ),
 
     page.getByRole(
       "link",
-      {
-        name:
-          /^view tee times$/i
-      }
+      { name: /^view tee times$/i }
     ),
 
     page.getByText(
       "View Tee Times",
-      {
-        exact: true
-      }
+      { exact: true }
     )
   ];
 
-  for (
-    const locator of candidates
-  ) {
+  for (const locator of candidates) {
     const count =
       Math.min(
         await locator.count(),
         8
       );
 
-    for (
-      let i = 0;
-      i < count;
-      i++
-    ) {
+    for (let i = 0; i < count; i++) {
       try {
         const item =
           locator.nth(i);
 
-        if (
-          !(await item.isVisible())
-        ) {
+        if (!(await item.isVisible())) {
           continue;
         }
 
@@ -584,20 +446,16 @@ async function clickViewTeeTimes(
           timeout: 5000
         });
 
-        await page.waitForTimeout(
-          5000
-        );
+        await page.waitForTimeout(5000);
 
         const text =
-          await getPageText(
-            page
-          );
+          await getPageText(page);
 
         const courseWords =
           course.name
             .toLowerCase()
             .replace(
-              /\bgolf\b|\bclub\b|\bcourse\b/g,
+              /\bgolf\b|\bclub\b|\bcourse\b|\bcountry\b/g,
               ""
             )
             .split(/\s+/)
@@ -613,19 +471,14 @@ async function clickViewTeeTimes(
           courseWords.length === 0 ||
           courseWords.some(
             word =>
-              lower.includes(
-                word
-              )
+              lower.includes(word)
           );
 
-        if (
-          !courseStillPresent
-        ) {
+        if (!courseStillPresent) {
           return false;
         }
 
         return true;
-
       } catch (_) {}
     }
   }
@@ -638,9 +491,7 @@ async function validateFullTeeSheet(
   course
 ) {
   const text =
-    await getPageText(
-      page
-    );
+    await getPageText(page);
 
   const lower =
     text.toLowerCase();
@@ -649,7 +500,7 @@ async function validateFullTeeSheet(
     course.name
       .toLowerCase()
       .replace(
-        /\bgolf\b|\bclub\b|\bcourse\b/g,
+        /\bgolf\b|\bclub\b|\bcourse\b|\bcountry\b/g,
         ""
       )
       .split(/\s+/)
@@ -666,12 +517,10 @@ async function validateFullTeeSheet(
     );
 
   const shortDate =
-    expectedDateText()
-      .toLowerCase();
+    expectedDateText().toLowerCase();
 
   const longDate =
-    expectedLongDateText()
-      .toLowerCase();
+    expectedLongDateText().toLowerCase();
 
   const datePresent =
     lower.includes(shortDate) ||
@@ -682,89 +531,57 @@ async function validateFullTeeSheet(
 
   console.log(
     `Full sheet course check: ${
-      coursePresent
-        ? "PASS"
-        : "FAIL"
+      coursePresent ? "PASS" : "FAIL"
     }`
   );
 
   console.log(
     `Full sheet date check: ${
-      datePresent
-        ? "PASS"
-        : "NOT VISIBLE"
+      datePresent ? "PASS" : "NOT VISIBLE"
     }`
   );
 
   return coursePresent;
 }
 
-function normalizePrice(
-  raw
-) {
-  if (!raw) {
-    return null;
-  }
+function normalizePrice(raw) {
+  if (!raw) return null;
 
   const cleaned =
-    raw.replace(
-      /[^\d.]/g,
-      ""
-    );
+    raw.replace(/[^\d.]/g, "");
 
-  if (!cleaned) {
-    return null;
-  }
+  if (!cleaned) return null;
 
-  if (
-    cleaned.includes(".")
-  ) {
+  if (cleaned.includes(".")) {
     const value =
       Number(cleaned);
 
-    return Number.isFinite(
-      value
-    )
+    return Number.isFinite(value)
       ? `$${value.toFixed(2)}`
       : null;
   }
 
-  if (
-    cleaned.length >= 3
-  ) {
+  if (cleaned.length >= 3) {
     const dollars =
-      cleaned.slice(
-        0,
-        -2
-      );
+      cleaned.slice(0, -2);
 
     const cents =
       cleaned.slice(-2);
 
-    return (
-      `$${Number(dollars)}.` +
-      cents
-    );
+    return `$${Number(dollars)}.${cents}`;
   }
 
-  return `$${Number(
-    cleaned
-  ).toFixed(2)}`;
+  return `$${Number(cleaned).toFixed(2)}`;
 }
 
-function parseTeeTimes(
-  text
-) {
+function parseTeeTimes(text) {
   const lines =
     text
       .split(/\r?\n/)
       .map(
         line =>
           line
-            .replace(
-              /\u00a0/g,
-              " "
-            )
+            .replace(/\u00a0/g, " ")
             .trim()
       )
       .filter(Boolean);
@@ -784,28 +601,16 @@ function parseTeeTimes(
 
   const results = [];
 
-  for (
-    let i = 0;
-    i < lines.length;
-    i++
-  ) {
-    if (
-      !timeRegex.test(
-        lines[i]
-      )
-    ) {
+  for (let i = 0; i < lines.length; i++) {
+    if (!timeRegex.test(lines[i])) {
       continue;
     }
 
     const teeTime =
-      normalizeTime(
-        lines[i]
-      );
+      normalizeTime(lines[i]);
 
     const minutes =
-      timeToMinutes(
-        teeTime
-      );
+      timeToMinutes(teeTime);
 
     if (
       minutes === null ||
@@ -823,11 +628,7 @@ function parseTeeTimes(
       j <= i + 20;
       j++
     ) {
-      if (
-        timeRegex.test(
-          lines[j]
-        )
-      ) {
+      if (timeRegex.test(lines[j])) {
         break;
       }
 
@@ -839,15 +640,11 @@ function parseTeeTimes(
         break;
       }
 
-      detailLines.push(
-        lines[j]
-      );
+      detailLines.push(lines[j]);
     }
 
     const details =
-      detailLines.join(
-        " | "
-      );
+      detailLines.join(" | ");
 
     if (
       /\b(SOLD|UNAVAILABLE)\b/i.test(
@@ -868,14 +665,10 @@ function parseTeeTimes(
 
     if (golferMatch) {
       holes =
-        Number(
-          golferMatch[1]
-        );
+        Number(golferMatch[1]);
 
       minGolfers =
-        Number(
-          golferMatch[2]
-        );
+        Number(golferMatch[2]);
 
       maxGolfers =
         Number(
@@ -884,9 +677,7 @@ function parseTeeTimes(
         );
     }
 
-    if (
-      maxGolfers === null
-    ) {
+    if (maxGolfers === null) {
       const range =
         details.match(
           /\b(\d)\s*(?:-|to)\s*(\d)\s*(?:players?|golfers?)\b/i
@@ -894,20 +685,14 @@ function parseTeeTimes(
 
       if (range) {
         minGolfers =
-          Number(
-            range[1]
-          );
+          Number(range[1]);
 
         maxGolfers =
-          Number(
-            range[2]
-          );
+          Number(range[2]);
       }
     }
 
-    if (
-      maxGolfers === null
-    ) {
+    if (maxGolfers === null) {
       const available =
         details.match(
           /\b(\d)\s*(?:players?|golfers?|spots?)\s*(?:available|open)?\b/i
@@ -923,17 +708,13 @@ function parseTeeTimes(
       }
     }
 
-    if (
-      maxGolfers === null
-    ) {
+    if (maxGolfers === null) {
       continue;
     }
 
     if (
-      SETTINGS.players <
-        minGolfers ||
-      SETTINGS.players >
-        maxGolfers
+      SETTINGS.players < minGolfers ||
+      SETTINGS.players > maxGolfers
     ) {
       continue;
     }
@@ -950,26 +731,17 @@ function parseTeeTimes(
           : null
       );
 
-    if (
-      !pricePerPerson
-    ) {
+    if (!pricePerPerson) {
       continue;
     }
 
     results.push({
-      time:
-        teeTime,
-
+      time: teeTime,
       pricePerPerson,
-
       holes,
-
       minGolfers,
-
       maxGolfers,
-
-      context:
-        details
+      context: details
     });
   }
 
@@ -987,9 +759,7 @@ function parseTeeTimes(
           tee.maxGolfers
         ].join("|");
 
-      if (
-        seen.has(key)
-      ) {
+      if (seen.has(key)) {
         return false;
       }
 
@@ -1000,17 +770,9 @@ function parseTeeTimes(
   );
 }
 
-// ======================================================
-// NTFY ALERTS
-// ======================================================
-
 function loadSeenAlerts() {
   try {
-    if (
-      !fs.existsSync(
-        SEEN_FILE
-      )
-    ) {
+    if (!fs.existsSync(SEEN_FILE)) {
       return {};
     }
 
@@ -1020,15 +782,12 @@ function loadSeenAlerts() {
         "utf8"
       )
     );
-
   } catch (_) {
     return {};
   }
 }
 
-function saveSeenAlerts(
-  seen
-) {
+function saveSeenAlerts(seen) {
   fs.writeFileSync(
     SEEN_FILE,
     JSON.stringify(
@@ -1040,9 +799,7 @@ function saveSeenAlerts(
   );
 }
 
-function makeAlertKey(
-  tee
-) {
+function makeAlertKey(tee) {
   return [
     tee.course,
     tee.date,
@@ -1080,32 +837,22 @@ async function sendNtfy(
     ).replace(/\/$/, "");
 
   const headers = {
-    Title:
-      title,
-
-    Priority:
-      "high",
-
-    Tags:
-      "golf"
+    Title: title,
+    Priority: "high",
+    Tags: "golf"
   };
 
   if (clickUrl) {
-    headers.Click =
-      clickUrl;
+    headers.Click = clickUrl;
   }
 
   const response =
     await fetch(
       `${server}/${encodeURIComponent(topic)}`,
       {
-        method:
-          "POST",
-
+        method: "POST",
         headers,
-
-        body:
-          message
+        body: message
       }
     );
 
@@ -1120,18 +867,14 @@ async function sendNtfy(
 
 async function sendManualTestAlert() {
   if (
-    process.env
-      .GITHUB_EVENT_NAME !==
+    process.env.GITHUB_EVENT_NAME !==
     "workflow_dispatch"
   ) {
     return;
   }
 
   if (
-    !(
-      process.env.NTFY_TOPIC ||
-      ""
-    ).trim()
+    !(process.env.NTFY_TOPIC || "").trim()
   ) {
     return;
   }
@@ -1143,13 +886,13 @@ async function sendManualTestAlert() {
       `Watcher is running.
 Date: ${SETTINGS.date}
 Golfers: ${SETTINGS.players}
-Time: ${SETTINGS.earliest} - ${SETTINGS.latest}`
+Time: ${SETTINGS.earliest} - ${SETTINGS.latest}
+Courses: ${SETTINGS.courses.length}`
     );
 
     console.log(
       "Test phone notification sent."
     );
-
   } catch (error) {
     console.log(
       "Test notification failed:",
@@ -1158,21 +901,15 @@ Time: ${SETTINGS.earliest} - ${SETTINGS.latest}`
   }
 }
 
-async function sendNewMatchAlerts(
-  matches
-) {
+async function sendNewMatchAlerts(matches) {
   const seen =
     loadSeenAlerts();
 
   let alertsSent = 0;
 
-  for (
-    const tee of matches
-  ) {
+  for (const tee of matches) {
     const key =
-      makeAlertKey(
-        tee
-      );
+      makeAlertKey(tee);
 
     if (seen[key]) {
       console.log(
@@ -1188,7 +925,7 @@ async function sendNewMatchAlerts(
         : "Holes not shown";
 
     const message =
-      `${tee.course}
+`${tee.course}
 ${tee.date} at ${tee.time}
 ${tee.pricePerPerson} per person
 ${SETTINGS.players} golfers
@@ -1206,8 +943,7 @@ Tap to open GolfNow`;
 
       if (sent) {
         seen[key] =
-          new Date()
-            .toISOString();
+          new Date().toISOString();
 
         alertsSent++;
 
@@ -1215,7 +951,6 @@ Tap to open GolfNow`;
           `Phone alert sent: ${tee.course} ${tee.time}`
         );
       }
-
     } catch (error) {
       console.log(
         `Phone alert failed: ${error.message}`
@@ -1223,16 +958,10 @@ Tap to open GolfNow`;
     }
   }
 
-  saveSeenAlerts(
-    seen
-  );
+  saveSeenAlerts(seen);
 
   return alertsSent;
 }
-
-// ======================================================
-// COURSE CHECK
-// ======================================================
 
 async function checkCourse(
   browser,
@@ -1242,9 +971,7 @@ async function checkCourse(
   console.log(
     "========================================"
   );
-  console.log(
-    course.name
-  );
+  console.log(course.name);
   console.log(
     "========================================"
   );
@@ -1256,8 +983,7 @@ async function checkCourse(
         height: 1100
       },
 
-      locale:
-        "en-US",
+      locale: "en-US",
 
       timezoneId:
         "America/New_York"
@@ -1275,6 +1001,10 @@ async function checkCourse(
       .toLowerCase();
 
   try {
+    console.log(
+      "Opening GolfNow course page..."
+    );
+
     await page.goto(
       course.url,
       {
@@ -1286,26 +1016,24 @@ async function checkCourse(
       }
     );
 
-    await page.waitForTimeout(
-      5000
-    );
+    await page.waitForTimeout(5000);
 
-    await dismissPrivacy(
-      page
-    );
+    await dismissPrivacy(page);
 
     const dateConfirmed =
       await setCourseDateWithArrows(
         page
       );
 
-    if (
-      !dateConfirmed
-    ) {
+    if (!dateConfirmed) {
       throw new Error(
         "Could not set requested date."
       );
     }
+
+    console.log(
+      `Confirmed date: ${expectedDateText()}`
+    );
 
     const opened =
       await clickViewTeeTimes(
@@ -1319,9 +1047,7 @@ async function checkCourse(
       );
     }
 
-    await page.waitForTimeout(
-      3500
-    );
+    await page.waitForTimeout(3500);
 
     const validSheet =
       await validateFullTeeSheet(
@@ -1336,16 +1062,13 @@ async function checkCourse(
     }
 
     const text =
-      await getPageText(
-        page
-      );
+      await getPageText(page);
 
     await page.screenshot({
       path:
         `${safeName}.png`,
 
-      fullPage:
-        true
+      fullPage: true
     });
 
     fs.writeFileSync(
@@ -1361,50 +1084,79 @@ async function checkCourse(
     );
 
     const matches =
-      parseTeeTimes(
-        text
+      parseTeeTimes(text);
+
+    if (!matches.length) {
+      console.log(
+        `No matching tee times for ${SETTINGS.players} golfers between ${SETTINGS.earliest} and ${SETTINGS.latest}.`
+      );
+    } else {
+      console.log(
+        `FOUND ${matches.length} matching tee time(s).`
       );
 
+      for (const tee of matches) {
+        console.log(
+          `${tee.time} | ${tee.pricePerPerson} | golfers ${tee.minGolfers}-${tee.maxGolfers}`
+        );
+      }
+    }
+
     return {
-      course:
-        course.name,
-
-      bookingUrl:
-        page.url(),
-
+      course: course.name,
+      bookingUrl: page.url(),
       matches
     };
-
   } catch (error) {
     console.log(
       "ERROR:",
       error.message
     );
 
-    return {
-      course:
-        course.name,
+    try {
+      const text =
+        await getPageText(page);
 
-      bookingUrl:
+      fs.writeFileSync(
+        `${safeName}.txt`,
+        text,
+        "utf8"
+      );
+
+      fs.writeFileSync(
+        `${safeName}_url.txt`,
         page.url(),
+        "utf8"
+      );
 
-      matches:
-        []
+      await page.screenshot({
+        path:
+          `${safeName}.png`,
+
+        fullPage: true
+      });
+    } catch (_) {}
+
+    return {
+      course: course.name,
+      bookingUrl: page.url(),
+      matches: []
     };
-
   } finally {
     await context.close();
   }
 }
 
-// ======================================================
-// MAIN
-// ======================================================
-
 async function main() {
   console.log("");
   console.log(
+    "========================================"
+  );
+  console.log(
     "GOLF TEE TIME WATCHER"
+  );
+  console.log(
+    "========================================"
   );
 
   console.log(
@@ -1419,21 +1171,21 @@ async function main() {
     `Golfers: ${SETTINGS.players}`
   );
 
+  console.log(
+    `Courses: ${SETTINGS.courses.length}`
+  );
+
   await sendManualTestAlert();
 
   const browser =
     await chromium.launch({
-      headless:
-        true
+      headless: true
     });
 
-  const courseResults =
-    [];
+  const courseResults = [];
 
   try {
-    for (
-      const course of SETTINGS.courses
-    ) {
+    for (const course of SETTINGS.courses) {
       courseResults.push(
         await checkCourse(
           browser,
@@ -1441,7 +1193,6 @@ async function main() {
         )
       );
     }
-
   } finally {
     await browser.close();
   }
@@ -1467,30 +1218,40 @@ async function main() {
 
   console.log("");
   console.log(
+    "========================================"
+  );
+  console.log(
     "FINAL RESULTS"
   );
+  console.log(
+    "========================================"
+  );
 
-  if (
-    matches.length === 0
-  ) {
+  if (matches.length === 0) {
     console.log(
-      "No matching tee times."
+      "No qualifying available tee times detected."
     );
-
   } else {
-    for (
-      const tee of matches
-    ) {
+    for (const tee of matches) {
+      console.log("");
+      console.log(tee.course);
       console.log(
-        `${tee.course} | ${tee.time} | ${tee.pricePerPerson}`
+        `${tee.date} at ${tee.time}`
+      );
+      console.log(
+        `${tee.pricePerPerson} per person`
+      );
+      console.log(
+        `${SETTINGS.players} golfers`
+      );
+      console.log(
+        tee.bookingUrl
       );
     }
   }
 
   const alertsSent =
-    await sendNewMatchAlerts(
-      matches
-    );
+    await sendNewMatchAlerts(matches);
 
   console.log(
     `New phone alerts sent: ${alertsSent}`
@@ -1519,6 +1280,10 @@ async function main() {
     ),
 
     "utf8"
+  );
+
+  console.log(
+    "Saved results.json"
   );
 }
 
