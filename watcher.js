@@ -35,10 +35,6 @@ const SETTINGS = {
   ]
 };
 
-// ======================================================
-// TIME HELPERS
-// ======================================================
-
 function timeToMinutes(value) {
   const m = String(value)
     .trim()
@@ -67,10 +63,6 @@ function normalizeTime(value) {
 
   return `${Number(m[1])}:${m[2]} ${m[3]}`;
 }
-
-// ======================================================
-// DATE HELPERS
-// ======================================================
 
 function targetDateObject() {
   const [year, month, day] = SETTINGS.date.split("-").map(Number);
@@ -157,10 +149,6 @@ function dayDifference(fromDate, toDate) {
   );
 }
 
-// ======================================================
-// PAGE HELPERS
-// ======================================================
-
 async function getPageText(page) {
   return await page.locator("body").innerText();
 }
@@ -202,10 +190,6 @@ async function getDisplayedDateObject(page) {
     await getPageText(page)
   );
 }
-
-// ======================================================
-// COURSE-PAGE DATE ARROWS
-// ======================================================
 
 async function findDateNavigationContainer(page) {
   const currentText =
@@ -506,10 +490,6 @@ async function setCourseDateWithArrows(
   return success;
 }
 
-// ======================================================
-// OPEN FULL TEE SHEET
-// ======================================================
-
 async function clickViewTeeTimes(
   page,
   course
@@ -640,10 +620,6 @@ async function clickViewTeeTimes(
   return false;
 }
 
-// ======================================================
-// VALIDATE FULL TEE SHEET
-// ======================================================
-
 async function validateFullTeeSheet(
   page,
   course
@@ -700,10 +676,6 @@ async function validateFullTeeSheet(
   return coursePresent;
 }
 
-// ======================================================
-// PRICE PARSER
-// ======================================================
-
 function normalizePrice(raw) {
   if (!raw) {
     return null;
@@ -748,10 +720,6 @@ function normalizePrice(raw) {
   return `$${Number(cleaned).toFixed(2)}`;
 }
 
-// ======================================================
-// FULL TEE-TIME PARSER
-// ======================================================
-
 function parseTeeTimes(text) {
   const lines =
     text
@@ -776,6 +744,14 @@ function parseTeeTimes(text) {
     timeToMinutes(
       SETTINGS.latest
     );
+
+  /*
+    IMPORTANT FIX:
+
+    This accepts BOTH:
+    11:10 AM
+    11:10AM
+  */
 
   const timeRegex =
     /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i;
@@ -997,10 +973,6 @@ function parseTeeTimes(text) {
     }
   );
 }
-
-// ======================================================
-// CHECK ONE COURSE
-// ======================================================
 
 async function checkCourse(
   browser,
@@ -1244,10 +1216,6 @@ async function checkCourse(
     await context.close();
   }
 }
-
-// ======================================================
-// MAIN
-// ======================================================
 
 async function main() {
   console.log("");
