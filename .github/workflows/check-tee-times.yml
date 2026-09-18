@@ -1,0 +1,48 @@
+name: Check Golf Tee Times
+
+on:
+
+  # Automatically check every 10 minutes
+  schedule:
+    - cron: "*/10 * * * *"
+
+  # Also lets you press Run manually
+  workflow_dispatch:
+
+jobs:
+
+  check:
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 10
+
+    steps:
+
+      - name: Get files
+        uses: actions/checkout@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Install packages
+        run: npm install
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Check GolfNow
+        run: node watcher.js
+
+      - name: Save results and screenshots
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: golf-check-results
+          path: |
+            results.json
+            *.png
+            *.txt
+          retention-days: 7
