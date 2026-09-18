@@ -35,6 +35,16 @@ jobs:
           restore-keys: |
             golf-alert-history-
 
+      - name: Check ntfy setup
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: |
+          if [ -z "$NTFY_TOPIC" ]; then
+            echo "NTFY_TOPIC is EMPTY"
+          else
+            echo "NTFY_TOPIC is SET"
+          fi
+
       - name: Check tee times
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
