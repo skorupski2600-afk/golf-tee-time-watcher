@@ -1,29 +1,23 @@
 name: Check Golf Tee Times
 
 on:
-
-  # Automatically check every 10 minutes
   schedule:
     - cron: "*/10 * * * *"
 
-  # Also lets you press Run manually
   workflow_dispatch:
 
 jobs:
-
   check:
-
     runs-on: ubuntu-latest
-
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
 
-      - name: Get files
-        uses: actions/checkout@v6
+      - name: Get repository
+        uses: actions/checkout@v4
 
       - name: Set up Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
           node-version: "22"
 
@@ -33,16 +27,34 @@ jobs:
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: Check GolfNow
+      - name: Restore alert history
+        uses: actions/cache/restore@v4
+        with:
+          path: seen-alerts.json
+          key: golf-alert-history-${{ github.run_id }}
+          restore-keys: |
+            golf-alert-history-
+
+      - name: Check tee times
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: node watcher.js
 
-      - name: Save results and screenshots
+      - name: Save alert history
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/cache/save@v4
+        with:
+          path: seen-alerts.json
+          key: golf-alert-history-${{ github.run_id }}
+
+      - name: Save results
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: golf-check-results
           path: |
             results.json
+            seen-alerts.json
             *.png
             *.txt
           retention-days: 7
