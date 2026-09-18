@@ -253,29 +253,14 @@ async function tryNativeDateInputs(page) {
 async function tryTopDatePicker(page) {
   const target = targetDateObject();
 
-  const targetDay = target.getDate();
+  const targetDay =
+    String(target.getDate());
 
-  const longLabel =
-    target.toLocaleDateString(
-      "en-US",
-      {
-        weekday: "long",
-        month: "long",
-        day: "numeric",
-        year: "numeric"
-      }
-    );
+  console.log(
+    `Trying GolfNow calendar for ${SETTINGS.date}...`
+  );
 
-  const monthDay =
-    target.toLocaleDateString(
-      "en-US",
-      {
-        month: "long",
-        day: "numeric"
-      }
-    );
-
-  const dateControlCandidates = [
+  const possibleDateControls = [
     page.getByText(
       /^[A-Z]{3}\s+\d{1,2}$/
     ).first(),
@@ -284,7 +269,9 @@ async function tryTopDatePicker(page) {
       'input[placeholder*="date" i]'
     ).first(),
 
-    page.locator("button")
+    page.locator(
+      '[class*="date" i]'
+    )
       .filter({
         hasText:
           /^[A-Z]{3}\s+\d{1,2}$/
@@ -292,143 +279,162 @@ async function tryTopDatePicker(page) {
       .first()
   ];
 
-  for (const control of dateControlCandidates) {
+  let opened = false;
+
+  for (const control of possibleDateControls) {
     try {
       if (
-        !(await control.count()) ||
-        !(await control.isVisible())
+        await control.count() &&
+        await control.isVisible()
+      ) {
+        await control.click();
+
+        await page.waitForTimeout(1000);
+
+        opened = true;
+
+        break;
+      }
+    } catch (_) {}
+  }
+
+  if (!opened) {
+    console.log(
+      "Could not open GolfNow calendar."
+    );
+
+    return false;
+  }
+
+  const calendars =
+    page.locator(
+      '[role="dialog"], [class*="calendar" i], [class*="datepicker" i], [class*="date-picker" i]'
+    );
+
+  const count =
+    await calendars.count();
+
+  for (
+    let i = 0;
+    i < count;
+    i++
+  ) {
+    const calendar =
+      calendars.nth(i);
+
+    try {
+      if (
+        !(await calendar.isVisible())
       ) {
         continue;
       }
 
-      await control.click();
-      await page.waitForTimeout(700);
+      const dayCandidates =
+        calendar.getByText(
+          new RegExp(
+            `^${targetDay}$`
+          ),
+          {
+            exact: true
+          }
+        );
 
-      const exactDateSelectors = [
-        `[data-date="${SETTINGS.date}"]`,
-        `[datetime="${SETTINGS.date}"]`,
-        `[aria-label*="${longLabel}" i]`,
-        `[aria-label*="${monthDay}" i]`
-      ];
+      const dayCount =
+        await dayCandidates.count();
 
-      for (const selector of exactDateSelectors) {
+      console.log(
+        `Found ${dayCount} calendar candidate(s) for day ${targetDay}.`
+      );
+
+      for (
+        let d = dayCount - 1;
+        d >= 0;
+        d--
+      ) {
         try {
-          const candidate =
-            page.locator(selector).first();
+          const day =
+            dayCandidates.nth(d);
 
           if (
-            await candidate.count() &&
-            await candidate.isVisible()
+            !(await day.isVisible())
           ) {
-            await candidate.click();
-
-            await page.waitForTimeout(2500);
-
-            const search =
-              page
-                .getByRole(
-                  "button",
-                  { name: /^search$/i }
-                )
-                .first();
-
-            if (
-              await search.count() &&
-              await search.isVisible()
-            ) {
-              await search.click();
-
-              await page.waitForTimeout(3000);
-            }
-
-            const shown =
-              await getDisplayedDate(page);
-
-            if (
-              shown &&
-              shown.display ===
-                formatTargetDateForGolfNow(
-                  SETTINGS.date
-                )
-            ) {
-              return true;
-            }
-          }
-        } catch (_) {}
-      }
-
-      const calendars = page.locator(
-        '[role="dialog"], [class*="calendar" i], [class*="datepicker" i], [class*="date-picker" i]'
-      );
-
-      const calCount = Math.min(
-        await calendars.count(),
-        5
-      );
-
-      for (let c = 0; c < calCount; c++) {
-        const cal = calendars.nth(c);
-
-        try {
-          if (!(await cal.isVisible())) {
             continue;
           }
 
-          const dayButton =
-            cal
+          console.log(
+            `Clicking calendar day ${targetDay}...`
+          );
+
+          await day.click({
+            force: true
+          });
+
+          await page.waitForTimeout(
+            1200
+          );
+
+          const searchButton =
+            page
               .getByRole(
                 "button",
                 {
-                  name:
-                    new RegExp(
-                      `^${targetDay}$`
-                    )
+                  name: /^search$/i
                 }
               )
-              .last();
+              .first();
 
           if (
-            await dayButton.count() &&
-            await dayButton.isVisible()
+            await searchButton.count() &&
+            await searchButton.isVisible()
           ) {
-            await dayButton.click();
+            console.log(
+              "Clicking Search..."
+            );
 
-            await page.waitForTimeout(1000);
+            await searchButton.click({
+              force: true
+            });
 
-            const search =
-              page
-                .getByRole(
-                  "button",
-                  { name: /^search$/i }
-                )
-                .first();
-
-            if (
-              await search.count() &&
-              await search.isVisible()
-            ) {
-              await search.click();
-            }
-
-            await page.waitForTimeout(3000);
-
-            const shown =
-              await getDisplayedDate(page);
-
-            if (
-              shown &&
-              shown.display ===
-                formatTargetDateForGolfNow(
-                  SETTINGS.date
-                )
-            ) {
-              return true;
-            }
+            await page.waitForTimeout(
+              4000
+            );
           }
-        } catch (_) {}
+
+          const shown =
+            await getDisplayedDate(
+              page
+            );
+
+          const wanted =
+            formatTargetDateForGolfNow(
+              SETTINGS.date
+            );
+
+          if (
+            shown &&
+            shown.display === wanted
+          ) {
+            console.log(
+              `Successfully changed date to ${wanted}.`
+            );
+
+            return true;
+          }
+
+        } catch (error) {
+          console.log(
+            "Date click attempt failed:",
+            error.message
+          );
+        }
       }
+
     } catch (_) {}
   }
+
+  console.log(
+    "Calendar opened, but the requested date was not successfully selected."
+  );
 
   return false;
 }
@@ -457,7 +463,11 @@ async function clickDateArrow(
   let container =
     dateText.locator("..");
 
-  for (let level = 0; level < 4; level++) {
+  for (
+    let level = 0;
+    level < 4;
+    level++
+  ) {
     try {
       const buttons =
         container.locator("button");
@@ -471,10 +481,14 @@ async function clickDateArrow(
             ? buttons.nth(count - 1)
             : buttons.nth(0);
 
-        if (await button.isVisible()) {
+        if (
+          await button.isVisible()
+        ) {
           await button.click();
 
-          await page.waitForTimeout(2200);
+          await page.waitForTimeout(
+            2200
+          );
 
           return true;
         }
@@ -492,10 +506,14 @@ async function clickDateArrow(
             ? links.nth(linkCount - 1)
             : links.nth(0);
 
-        if (await link.isVisible()) {
+        if (
+          await link.isVisible()
+        ) {
           await link.click();
 
-          await page.waitForTimeout(2200);
+          await page.waitForTimeout(
+            2200
+          );
 
           return true;
         }
@@ -503,6 +521,7 @@ async function clickDateArrow(
 
       container =
         container.locator("..");
+
     } catch (_) {}
   }
 
@@ -510,7 +529,8 @@ async function clickDateArrow(
 }
 
 async function setGolfNowDate(page) {
-  const target = targetDateObject();
+  const target =
+    targetDateObject();
 
   const wanted =
     formatTargetDateForGolfNow(
@@ -556,7 +576,9 @@ async function setGolfNowDate(page) {
       target
     );
 
-  if (Math.abs(diff) > 31) {
+  if (
+    Math.abs(diff) > 31
+  ) {
     console.log(
       "Target date is too far away."
     );
@@ -585,12 +607,16 @@ async function setGolfNowDate(page) {
         direction
       );
 
-    if (!clicked) break;
+    if (!clicked) {
+      break;
+    }
 
     shown =
       await getDisplayedDate(page);
 
-    if (!shown) break;
+    if (!shown) {
+      break;
+    }
 
     diff =
       dayDifference(
@@ -616,7 +642,10 @@ function parseTeeTimesFromBody(bodyText) {
       .split(/\r?\n/)
       .map(line =>
         line
-          .replace(/\u00a0/g, " ")
+          .replace(
+            /\u00a0/g,
+            " "
+          )
           .trim()
       )
       .filter(Boolean);
@@ -646,7 +675,9 @@ function parseTeeTimesFromBody(bodyText) {
         timeLineRegex
       );
 
-    if (!match) continue;
+    if (!match) {
+      continue;
+    }
 
     const time =
       normalizeTime(
@@ -683,13 +714,19 @@ function parseTeeTimesFromBody(bodyText) {
         break;
       }
 
-      block.push(lines[j]);
+      block.push(
+        lines[j]
+      );
     }
 
     const blockText =
       block.join(" | ");
 
-    if (/SOLD/i.test(blockText)) {
+    if (
+      /SOLD/i.test(
+        blockText
+      )
+    ) {
       continue;
     }
 
@@ -758,7 +795,8 @@ function parseTeeTimesFromBody(bodyText) {
         minGolfers,
         maxGolfers,
         holes,
-        context: blockText
+        context:
+          blockText
       });
     }
   }
@@ -789,10 +827,15 @@ async function checkCourse(
   course
 ) {
   console.log("");
+
   console.log(
     "=================================="
   );
-  console.log(course.name);
+
+  console.log(
+    course.name
+  );
+
   console.log(
     "=================================="
   );
@@ -804,7 +847,8 @@ async function checkCourse(
         height: 1000
       },
 
-      locale: "en-US",
+      locale:
+        "en-US",
 
       timezoneId:
         "America/New_York"
@@ -823,7 +867,9 @@ async function checkCourse(
       {
         waitUntil:
           "domcontentloaded",
-        timeout: 60000
+
+        timeout:
+          60000
       }
     );
 
@@ -877,7 +923,9 @@ async function checkCourse(
     await page.screenshot({
       path:
         `${safeName}.png`,
-      fullPage: true
+
+      fullPage:
+        true
     });
 
     fs.writeFileSync(
@@ -890,11 +938,15 @@ async function checkCourse(
       return {
         course:
           course.name,
+
         url:
           page.url(),
+
         dateConfirmed:
           false,
-        matches: []
+
+        matches:
+          []
       };
     }
 
@@ -903,7 +955,9 @@ async function checkCourse(
         body
       );
 
-    if (!matches.length) {
+    if (
+      !matches.length
+    ) {
       console.log(
         `No available tee times for ${SETTINGS.players} golfer(s) between ${SETTINGS.earliest} and ${SETTINGS.latest}.`
       );
@@ -933,6 +987,7 @@ async function checkCourse(
 
       matches
     };
+
   } catch (error) {
     console.log(
       "ERROR:",
@@ -952,8 +1007,10 @@ async function checkCourse(
       error:
         error.message,
 
-      matches: []
+      matches:
+        []
     };
+
   } finally {
     await context.close();
   }
@@ -961,9 +1018,11 @@ async function checkCourse(
 
 async function main() {
   console.log("");
+
   console.log(
     "GOLF TEE TIME WATCHER"
   );
+
   console.log("");
 
   console.log(
@@ -990,7 +1049,8 @@ async function main() {
 
   const browser =
     await chromium.launch({
-      headless: true
+      headless:
+        true
     });
 
   const courseResults =
@@ -1007,6 +1067,7 @@ async function main() {
         )
       );
     }
+
   } finally {
     await browser.close();
   }
@@ -1031,20 +1092,26 @@ async function main() {
     );
 
   console.log("");
-  console.log(
-    "=================================="
-  );
-  console.log(
-    "FINAL RESULTS"
-  );
+
   console.log(
     "=================================="
   );
 
-  if (!allMatches.length) {
+  console.log(
+    "FINAL RESULTS"
+  );
+
+  console.log(
+    "=================================="
+  );
+
+  if (
+    !allMatches.length
+  ) {
     console.log(
       "No qualifying available tee times detected."
     );
+
   } else {
     for (
       const tee of allMatches
@@ -1071,16 +1138,25 @@ async function main() {
 
   fs.writeFileSync(
     "results.json",
+
     JSON.stringify(
       output,
       null,
       2
     ),
+
     "utf8"
   );
 }
 
-main().catch(error => {
-  console.error(error);
-  process.exit(1);
-});
+main().catch(
+  error => {
+    console.error(
+      error
+    );
+
+    process.exit(
+      1
+    );
+  }
+);
