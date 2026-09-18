@@ -2,7 +2,7 @@ const { chromium } = require("playwright");
 const fs = require("fs");
 
 // ======================================================
-// ONLY CHANGE THESE SETTINGS WHEN YOU WANT A NEW SEARCH
+// CHANGE ONLY THESE SETTINGS FOR A NEW SEARCH
 // ======================================================
 
 const SETTINGS = {
@@ -40,157 +40,109 @@ const SETTINGS = {
 };
 
 // ======================================================
+// TIME HELPERS
+// ======================================================
 
 function timeToMinutes(value) {
-  const m = String(value)
+  const match = String(value)
     .trim()
     .toUpperCase()
     .match(/(\d{1,2}):(\d{2})\s*(AM|PM)/);
 
-  if (!m) return null;
+  if (!match) return null;
 
-  let hour = Number(m[1]);
-  const minute = Number(m[2]);
-  const ampm = m[3];
+  let hour = Number(match[1]);
+  const minute = Number(match[2]);
+  const ampm = match[3];
 
-  if (ampm === "PM" && hour !== 12) hour += 12;
-  if (ampm === "AM" && hour === 12) hour = 0;
+  if (ampm === "PM" && hour !== 12) {
+    hour += 12;
+  }
+
+  if (ampm === "AM" && hour === 12) {
+    hour = 0;
+  }
 
   return hour * 60 + minute;
 }
 
 function normalizeTime(value) {
-  const m = String(value)
+  const match = String(value)
     .trim()
     .toUpperCase()
     .match(/(\d{1,2}):(\d{2})\s*(AM|PM)/);
 
-  if (!m) return null;
-
-  return `${Number(m[1])}:${m[2]} ${m[3]}`;
-}
-
-function formatTargetDateForGolfNow(isoDate) {
-  const [y, m, d] = isoDate.split("-").map(Number);
-
-  const dt = new Date(Date.UTC(y, m - 1, d));
-
-  const weekday = dt.toLocaleDateString("en-US", {
-    weekday: "short",
-    timeZone: "UTC"
-  });
-
-  const month = dt.toLocaleDateString("en-US", {
-    month: "short",
-    timeZone: "UTC"
-  });
-
-  return `${weekday}, ${month} ${d}`;
-}
-
-function parseGolfNowHeadingDate(text) {
-  const match = text.match(
-    /Showing Tee Times for:[\s\S]*?\bon\s+([A-Z][a-z]{2}),\s+([A-Z][a-z]{2})\s+(\d{1,2})/i
-  );
-
   if (!match) return null;
 
-  const year = Number(SETTINGS.date.slice(0, 4));
+  return `${Number(match[1])}:${match[2]} ${match[3]}`;
+}
 
-  const parsed = new Date(
-    `${match[2]} ${match[3]}, ${year} 12:00:00`
-  );
+// ======================================================
+// DATE HELPERS
+// ======================================================
 
-  if (Number.isNaN(parsed.getTime())) return null;
+function targetDateParts() {
+  const [year, month, day] =
+    SETTINGS.date.split("-").map(Number);
 
   return {
-    display: `${match[1]}, ${match[2]} ${Number(match[3])}`,
-    date: parsed
+    year,
+    month,
+    day
   };
 }
 
 function targetDateObject() {
-  const [y, m, d] = SETTINGS.date.split("-").map(Number);
+  const { year, month, day } =
+    targetDateParts();
 
   return new Date(
-    y,
-    m - 1,
-    d,
+    year,
+    month - 1,
+    day,
     12,
     0,
     0
   );
 }
 
-function dayDifference(a, b) {
-  const oneDay = 24 * 60 * 60 * 1000;
-
-  const aa = new Date(
-    a.getFullYear(),
-    a.getMonth(),
-    a.getDate()
+function targetMonthName() {
+  return targetDateObject().toLocaleDateString(
+    "en-US",
+    {
+      month: "long"
+    }
   );
+}
 
-  const bb = new Date(
-    b.getFullYear(),
-    b.getMonth(),
-    b.getDate()
+function targetMonthShort() {
+  return targetDateObject().toLocaleDateString(
+    "en-US",
+    {
+      month: "short"
+    }
   );
-
-  return Math.round((bb - aa) / oneDay);
 }
 
-function normalizeGolfNowPrice(raw) {
-  if (!raw) return null;
-
-  const cleaned = raw.replace(/[^\d.]/g, "");
-
-  if (!cleaned) return null;
-
-  if (cleaned.includes(".")) {
-    const value = Number(cleaned);
-
-    return Number.isFinite(value)
-      ? `$${value.toFixed(2)}`
-      : null;
-  }
-
-  // GolfNow sometimes renders $89.00 as $8900 in extracted text.
-  if (cleaned.length >= 3) {
-    const cents = cleaned.slice(-2);
-    const dollars = cleaned.slice(0, -2);
-
-    return `$${Number(dollars)}.${cents}`;
-  }
-
-  return `$${Number(cleaned).toFixed(2)}`;
+function targetWeekdayShort() {
+  return targetDateObject().toLocaleDateString(
+    "en-US",
+    {
+      weekday: "short"
+    }
+  );
 }
 
-async function dismissPrivacy(page) {
-  const names = [
-    /^continue$/i,
-    /^accept all$/i,
-    /^accept$/i,
-    /^agree$/i
-  ];
+function expectedGolfNowDateText() {
+  const { day } =
+    targetDateParts();
 
-  for (const name of names) {
-    try {
-      const button = page
-        .getByRole("button", { name })
-        .first();
-
-      if (
-        await button.count() &&
-        await button.isVisible()
-      ) {
-        await button.click();
-        await page.waitForTimeout(800);
-        return;
-      }
-    } catch (_) {}
-  }
+  return `${targetWeekdayShort()}, ${targetMonthShort()} ${day}`;
 }
+
+// ======================================================
+// PAGE HELPERS
+// ======================================================
 
 async function getPageText(page) {
   return await page
@@ -198,445 +150,582 @@ async function getPageText(page) {
     .innerText();
 }
 
-async function getDisplayedDate(page) {
-  const body = await getPageText(page);
-
-  return parseGolfNowHeadingDate(body);
-}
-
-async function tryNativeDateInputs(page) {
-  const selectors = [
-    'input[type="date"]',
-    'input[name*="date" i]',
-    'input[id*="date" i]'
+async function dismissPrivacy(page) {
+  const buttonNames = [
+    /^continue$/i,
+    /^accept all$/i,
+    /^accept$/i,
+    /^agree$/i
   ];
 
-  for (const selector of selectors) {
-    const inputs = page.locator(selector);
+  for (const name of buttonNames) {
+    try {
+      const button =
+        page
+          .getByRole("button", {
+            name
+          })
+          .first();
 
-    const count = Math.min(
-      await inputs.count(),
-      6
+      if (
+        await button.count() &&
+        await button.isVisible()
+      ) {
+        await button.click();
+
+        await page.waitForTimeout(
+          800
+        );
+
+        return;
+      }
+    } catch (_) {}
+  }
+}
+
+// ======================================================
+// READ CURRENT GOLFNOW DATE
+// ======================================================
+
+function parseDisplayedGolfNowDate(text) {
+  /*
+    Handles both:
+
+    Showing Hot Deals for:
+    Old Bridge Golf Club on Fri, Sep 18
+
+    AND:
+
+    Showing Tee Times for:
+    Course Name on Fri, Sep 18
+  */
+
+  const match = text.match(
+    /Showing\s+(?:Hot Deals|Tee Times)\s+for:[\s\S]*?\bon\s+([A-Z][a-z]{2}),\s+([A-Z][a-z]{2})\s+(\d{1,2})/i
+  );
+
+  if (!match) {
+    return null;
+  }
+
+  return {
+    weekday: match[1],
+    month: match[2],
+    day: Number(match[3]),
+    display:
+      `${match[1]}, ${match[2]} ${Number(match[3])}`
+  };
+}
+
+async function getDisplayedGolfNowDate(page) {
+  const text =
+    await getPageText(page);
+
+  return parseDisplayedGolfNowDate(
+    text
+  );
+}
+
+async function confirmCorrectDate(page) {
+  const displayed =
+    await getDisplayedGolfNowDate(page);
+
+  if (!displayed) {
+    return false;
+  }
+
+  const expected =
+    expectedGolfNowDateText();
+
+  console.log(
+    `GolfNow currently shows: ${displayed.display}`
+  );
+
+  console.log(
+    `We need: ${expected}`
+  );
+
+  return displayed.display === expected;
+}
+
+// ======================================================
+// GOLFNOW CALENDAR
+// ======================================================
+
+async function openGolfNowCalendar(page) {
+  console.log(
+    "Opening GolfNow calendar..."
+  );
+
+  /*
+    Sometimes GolfNow already has the calendar open.
+    If we can see the month and target day, don't click
+    anything unnecessarily.
+  */
+
+  const monthText =
+    targetMonthName();
+
+  try {
+    const visibleMonth =
+      page.getByText(
+        new RegExp(
+          `^${monthText}\\s*2026$`,
+          "i"
+        )
+      );
+
+    const monthCount =
+      await visibleMonth.count();
+
+    for (
+      let i = 0;
+      i < monthCount;
+      i++
+    ) {
+      if (
+        await visibleMonth
+          .nth(i)
+          .isVisible()
+      ) {
+        console.log(
+          "Calendar is already open."
+        );
+
+        return true;
+      }
+    }
+  } catch (_) {}
+
+  /*
+    Try the compact date control such as SEP 18.
+  */
+
+  const controls = [
+    page
+      .getByText(
+        /^[A-Z]{3}\s*\d{1,2}$/
+      )
+      .first(),
+
+    page
+      .locator(
+        'input[placeholder*="date" i]'
+      )
+      .first(),
+
+    page
+      .locator(
+        '[class*="date" i]'
+      )
+      .filter({
+        hasText:
+          /^[A-Z]{3}\s*\d{1,2}$/
+      })
+      .first()
+  ];
+
+  for (const control of controls) {
+    try {
+      if (
+        await control.count() &&
+        await control.isVisible()
+      ) {
+        await control.click({
+          force: true
+        });
+
+        await page.waitForTimeout(
+          1000
+        );
+
+        console.log(
+          "Calendar opened."
+        );
+
+        return true;
+      }
+    } catch (_) {}
+  }
+
+  /*
+    The calendar may still exist on the page even if
+    no date-control click was necessary.
+  */
+
+  const body =
+    await getPageText(page);
+
+  if (
+    body.includes(targetMonthName()) &&
+    body.includes(String(targetDateParts().day))
+  ) {
+    console.log(
+      "Calendar appears to already be visible."
     );
 
-    for (let i = 0; i < count; i++) {
-      try {
-        const input = inputs.nth(i);
+    return true;
+  }
 
-        if (!(await input.isVisible())) {
+  console.log(
+    "Could not open GolfNow calendar."
+  );
+
+  return false;
+}
+
+// ======================================================
+// SELECT TARGET CALENDAR DAY
+// ======================================================
+
+async function clickTargetCalendarDay(page) {
+  const { day } =
+    targetDateParts();
+
+  console.log(
+    `Looking for calendar day ${day}...`
+  );
+
+  /*
+    The latest GolfNow test showed calendar days as
+    ordinary clickable text/cells, NOT accessible buttons.
+
+    Therefore we find every exact visible "26" and try
+    clicking each candidate until the page accepts it.
+  */
+
+  const candidates =
+    page.getByText(
+      String(day),
+      {
+        exact: true
+      }
+    );
+
+  const count =
+    await candidates.count();
+
+  console.log(
+    `Found ${count} exact "${day}" element(s).`
+  );
+
+  if (count === 0) {
+    return false;
+  }
+
+  /*
+    Start with the LAST candidate.
+    This helps avoid dates shown from an adjacent month
+    in some calendar layouts.
+  */
+
+  for (
+    let i = count - 1;
+    i >= 0;
+    i--
+  ) {
+    const candidate =
+      candidates.nth(i);
+
+    try {
+      if (
+        !(await candidate.isVisible())
+      ) {
+        continue;
+      }
+
+      const box =
+        await candidate.boundingBox();
+
+      if (!box) {
+        continue;
+      }
+
+      console.log(
+        `Trying visible day ${day}, candidate ${i + 1}...`
+      );
+
+      /*
+        First try clicking the date itself.
+      */
+
+      try {
+        await candidate.click({
+          force: true,
+          timeout: 3000
+        });
+      } catch (_) {
+        /*
+          If the text itself isn't clickable,
+          try its parent calendar cell.
+        */
+
+        try {
+          await candidate
+            .locator("..")
+            .click({
+              force: true,
+              timeout: 3000
+            });
+        } catch (_) {
           continue;
         }
+      }
 
-        await input.fill(SETTINGS.date);
-        await input.dispatchEvent("input");
-        await input.dispatchEvent("change");
+      await page.waitForTimeout(
+        800
+      );
 
-        await page.waitForTimeout(3000);
+      console.log(
+        `Clicked day ${day}.`
+      );
 
-        const shown =
-          await getDisplayedDate(page);
+      return true;
 
-        if (
-          shown &&
-          shown.display ===
-            formatTargetDateForGolfNow(SETTINGS.date)
-        ) {
-          return true;
-        }
-      } catch (_) {}
+    } catch (error) {
+      console.log(
+        `Candidate ${i + 1} failed: ${error.message}`
+      );
     }
   }
 
   return false;
 }
 
-async function tryTopDatePicker(page) {
-  const target = targetDateObject();
+// ======================================================
+// CLICK SEARCH
+// ======================================================
 
-  const targetDay =
-    String(target.getDate());
-
+async function clickGolfNowSearch(page) {
   console.log(
-    `Trying GolfNow calendar for ${SETTINGS.date}...`
+    "Looking for GolfNow Search button..."
   );
 
-  const possibleDateControls = [
-    page.getByText(
-      /^[A-Z]{3}\s+\d{1,2}$/
-    ).first(),
-
-    page.locator(
-      'input[placeholder*="date" i]'
-    ).first(),
-
-    page.locator(
-      '[class*="date" i]'
-    )
-      .filter({
-        hasText:
-          /^[A-Z]{3}\s+\d{1,2}$/
-      })
-      .first()
-  ];
-
-  let opened = false;
-
-  for (const control of possibleDateControls) {
-    try {
-      if (
-        await control.count() &&
-        await control.isVisible()
-      ) {
-        await control.click();
-
-        await page.waitForTimeout(1000);
-
-        opened = true;
-
-        break;
+  const searches =
+    page.getByRole(
+      "button",
+      {
+        name: /^search$/i
       }
-    } catch (_) {}
-  }
-
-  if (!opened) {
-    console.log(
-      "Could not open GolfNow calendar."
-    );
-
-    return false;
-  }
-
-  const calendars =
-    page.locator(
-      '[role="dialog"], [class*="calendar" i], [class*="datepicker" i], [class*="date-picker" i]'
     );
 
   const count =
-    await calendars.count();
+    await searches.count();
 
   for (
     let i = 0;
     i < count;
     i++
   ) {
-    const calendar =
-      calendars.nth(i);
-
     try {
-      if (
-        !(await calendar.isVisible())
-      ) {
-        continue;
-      }
+      const search =
+        searches.nth(i);
 
-      const dayCandidates =
-        calendar.getByText(
-          new RegExp(
-            `^${targetDay}$`
-          ),
-          {
-            exact: true
-          }
+      if (
+        await search.isVisible()
+      ) {
+        console.log(
+          "Clicking Search..."
         );
 
-      const dayCount =
-        await dayCandidates.count();
+        await search.click({
+          force: true
+        });
 
-      console.log(
-        `Found ${dayCount} calendar candidate(s) for day ${targetDay}.`
-      );
+        await page.waitForTimeout(
+          4500
+        );
 
-      for (
-        let d = dayCount - 1;
-        d >= 0;
-        d--
-      ) {
-        try {
-          const day =
-            dayCandidates.nth(d);
-
-          if (
-            !(await day.isVisible())
-          ) {
-            continue;
-          }
-
-          console.log(
-            `Clicking calendar day ${targetDay}...`
-          );
-
-          await day.click({
-            force: true
-          });
-
-          await page.waitForTimeout(
-            1200
-          );
-
-          const searchButton =
-            page
-              .getByRole(
-                "button",
-                {
-                  name: /^search$/i
-                }
-              )
-              .first();
-
-          if (
-            await searchButton.count() &&
-            await searchButton.isVisible()
-          ) {
-            console.log(
-              "Clicking Search..."
-            );
-
-            await searchButton.click({
-              force: true
-            });
-
-            await page.waitForTimeout(
-              4000
-            );
-          }
-
-          const shown =
-            await getDisplayedDate(
-              page
-            );
-
-          const wanted =
-            formatTargetDateForGolfNow(
-              SETTINGS.date
-            );
-
-          if (
-            shown &&
-            shown.display === wanted
-          ) {
-            console.log(
-              `Successfully changed date to ${wanted}.`
-            );
-
-            return true;
-          }
-
-        } catch (error) {
-          console.log(
-            "Date click attempt failed:",
-            error.message
-          );
-        }
+        return true;
       }
-
     } catch (_) {}
   }
 
-  console.log(
-    "Calendar opened, but the requested date was not successfully selected."
-  );
+  /*
+    Some GolfNow versions render Search as text rather
+    than a normal accessible button.
+  */
 
-  return false;
-}
+  const textSearch =
+    page.getByText(
+      "Search",
+      {
+        exact: true
+      }
+    );
 
-async function clickDateArrow(
-  page,
-  direction
-) {
-  const shown =
-    await getDisplayedDate(page);
-
-  if (!shown) return false;
-
-  const dateText =
-    page
-      .getByText(
-        shown.display,
-        { exact: true }
-      )
-      .first();
-
-  if (!(await dateText.count())) {
-    return false;
-  }
-
-  let container =
-    dateText.locator("..");
+  const textCount =
+    await textSearch.count();
 
   for (
-    let level = 0;
-    level < 4;
-    level++
+    let i = 0;
+    i < textCount;
+    i++
   ) {
     try {
-      const buttons =
-        container.locator("button");
+      const search =
+        textSearch.nth(i);
 
-      const count =
-        await buttons.count();
+      if (
+        await search.isVisible()
+      ) {
+        await search.click({
+          force: true
+        });
 
-      if (count >= 2) {
-        const button =
-          direction === "next"
-            ? buttons.nth(count - 1)
-            : buttons.nth(0);
+        await page.waitForTimeout(
+          4500
+        );
 
-        if (
-          await button.isVisible()
-        ) {
-          await button.click();
-
-          await page.waitForTimeout(
-            2200
-          );
-
-          return true;
-        }
+        return true;
       }
-
-      const links =
-        container.locator("a");
-
-      const linkCount =
-        await links.count();
-
-      if (linkCount >= 2) {
-        const link =
-          direction === "next"
-            ? links.nth(linkCount - 1)
-            : links.nth(0);
-
-        if (
-          await link.isVisible()
-        ) {
-          await link.click();
-
-          await page.waitForTimeout(
-            2200
-          );
-
-          return true;
-        }
-      }
-
-      container =
-        container.locator("..");
-
     } catch (_) {}
   }
+
+  console.log(
+    "Search button not found."
+  );
 
   return false;
 }
 
+// ======================================================
+// SET TARGET DATE
+// ======================================================
+
 async function setGolfNowDate(page) {
-  const target =
-    targetDateObject();
+  /*
+    If already correct, stop immediately.
+  */
 
-  const wanted =
-    formatTargetDateForGolfNow(
-      SETTINGS.date
+  if (
+    await confirmCorrectDate(page)
+  ) {
+    console.log(
+      "Correct date is already loaded."
     );
 
-  let shown =
-    await getDisplayedDate(page);
-
-  if (
-    shown &&
-    shown.display === wanted
-  ) {
     return true;
   }
 
-  if (
-    await tryNativeDateInputs(page)
-  ) {
-    return true;
+  const calendarOpened =
+    await openGolfNowCalendar(page);
+
+  if (!calendarOpened) {
+    return false;
   }
 
-  if (
-    await tryTopDatePicker(page)
-  ) {
-    return true;
-  }
+  await page.waitForTimeout(
+    500
+  );
 
-  shown =
-    await getDisplayedDate(page);
+  const dateClicked =
+    await clickTargetCalendarDay(page);
 
-  if (!shown) {
+  if (!dateClicked) {
     console.log(
-      "Could not detect GolfNow's current date."
+      "Could not click requested calendar date."
     );
 
     return false;
   }
 
-  let diff =
-    dayDifference(
-      shown.date,
-      target
-    );
+  await page.waitForTimeout(
+    700
+  );
 
-  if (
-    Math.abs(diff) > 31
-  ) {
+  await clickGolfNowSearch(page);
+
+  /*
+    Give GolfNow extra time to reload its tee sheet.
+  */
+
+  await page.waitForTimeout(
+    3500
+  );
+
+  const success =
+    await confirmCorrectDate(page);
+
+  if (success) {
     console.log(
-      "Target date is too far away."
+      `SUCCESS: GolfNow changed to ${expectedGolfNowDateText()}.`
     );
-
-    return false;
+  } else {
+    console.log(
+      `FAILED: GolfNow did not change to ${expectedGolfNowDateText()}.`
+    );
   }
 
-  console.log(
-    `Moving tee sheet ${diff} day(s) to ${wanted}...`
-  );
-
-  let safety = 0;
-
-  while (
-    diff !== 0 &&
-    safety < 35
-  ) {
-    const direction =
-      diff > 0
-        ? "next"
-        : "previous";
-
-    const clicked =
-      await clickDateArrow(
-        page,
-        direction
-      );
-
-    if (!clicked) {
-      break;
-    }
-
-    shown =
-      await getDisplayedDate(page);
-
-    if (!shown) {
-      break;
-    }
-
-    diff =
-      dayDifference(
-        shown.date,
-        target
-      );
-
-    safety++;
-  }
-
-  shown =
-    await getDisplayedDate(page);
-
-  return Boolean(
-    shown &&
-    shown.display === wanted
-  );
+  return success;
 }
 
-function parseTeeTimesFromBody(bodyText) {
+// ======================================================
+// PRICE
+// ======================================================
+
+function normalizeGolfNowPrice(raw) {
+  if (!raw) {
+    return null;
+  }
+
+  const cleaned =
+    raw.replace(
+      /[^\d.]/g,
+      ""
+    );
+
+  if (!cleaned) {
+    return null;
+  }
+
+  /*
+    Normal $79.00 format.
+  */
+
+  if (
+    cleaned.includes(".")
+  ) {
+    const value =
+      Number(cleaned);
+
+    if (
+      Number.isFinite(value)
+    ) {
+      return `$${value.toFixed(2)}`;
+    }
+
+    return null;
+  }
+
+  /*
+    GolfNow's superscript cents can become:
+
+    $7900
+
+    when extracted as text.
+  */
+
+  if (
+    cleaned.length >= 3
+  ) {
+    const cents =
+      cleaned.slice(-2);
+
+    const dollars =
+      cleaned.slice(0, -2);
+
+    return `$${Number(dollars)}.${cents}`;
+  }
+
+  return `$${Number(cleaned).toFixed(2)}`;
+}
+
+// ======================================================
+// TEE TIME PARSER
+// ======================================================
+
+function parseTeeTimes(bodyText) {
   const lines =
     bodyText
       .split(/\r?\n/)
@@ -660,78 +749,157 @@ function parseTeeTimesFromBody(bodyText) {
       SETTINGS.latest
     );
 
-  const timeLineRegex =
+  const teeTimeRegex =
     /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i;
 
-  const rawTimes = [];
+  const results = [];
 
   for (
     let i = 0;
     i < lines.length;
     i++
   ) {
-    const match =
-      lines[i].match(
-        timeLineRegex
-      );
-
-    if (!match) {
-      continue;
-    }
-
-    const time =
-      normalizeTime(
-        lines[i]
-      );
-
-    const minutes =
-      timeToMinutes(time);
-
-    const block = [];
-
-    for (
-      let j = i + 1;
-      j < lines.length &&
-      j < i + 12;
-      j++
-    ) {
-      if (
-        timeLineRegex.test(
-          lines[j]
-        )
-      ) {
-        break;
-      }
-
-      if (
-        /^More Hot Deals$/i.test(
-          lines[j]
-        ) ||
-        /Tee Times at .* Golf/i.test(
-          lines[j]
-        )
-      ) {
-        break;
-      }
-
-      block.push(
-        lines[j]
-      );
-    }
-
-    const blockText =
-      block.join(" | ");
-
     if (
-      /SOLD/i.test(
-        blockText
+      !teeTimeRegex.test(
+        lines[i]
       )
     ) {
       continue;
     }
 
+    const teeTime =
+      normalizeTime(
+        lines[i]
+      );
+
+    const teeMinutes =
+      timeToMinutes(
+        teeTime
+      );
+
+    /*
+      Grab the text belonging to this tee-time card.
+    */
+
+    const details = [];
+
+    for (
+      let j = i + 1;
+      j < lines.length &&
+      j <= i + 15;
+      j++
+    ) {
+      if (
+        teeTimeRegex.test(
+          lines[j]
+        )
+      ) {
+        break;
+      }
+
+      if (
+        /^More$/i.test(
+          lines[j]
+        ) ||
+        /^More Hot Deals$/i.test(
+          lines[j]
+        ) ||
+        /^Tee Details$/i.test(
+          lines[j]
+        )
+      ) {
+        break;
+      }
+
+      details.push(
+        lines[j]
+      );
+    }
+
+    const detailText =
+      details.join(" | ");
+
+    /*
+      Ignore SOLD tee times.
+    */
+
+    if (
+      /\bSOLD\b/i.test(
+        detailText
+      )
+    ) {
+      continue;
+    }
+
+    /*
+      Must fall within requested time range.
+    */
+
+    if (
+      teeMinutes === null ||
+      teeMinutes < earliest ||
+      teeMinutes > latest
+    ) {
+      continue;
+    }
+
+    /*
+      GolfNow examples from the actual pages:
+
+      18 / 1-4
+      18 / 1-2
+
+      First number = holes.
+      Range after slash = golfers allowed.
+    */
+
+    const golferMatch =
+      detailText.match(
+        /\b(9|18)\s*\/\s*(\d)(?:\s*-\s*(\d))?\b/
+      );
+
+    if (!golferMatch) {
+      continue;
+    }
+
+    const holes =
+      Number(
+        golferMatch[1]
+      );
+
+    const minGolfers =
+      Number(
+        golferMatch[2]
+      );
+
+    const maxGolfers =
+      Number(
+        golferMatch[3] ||
+        golferMatch[2]
+      );
+
+    /*
+      Example:
+      Need 4 players.
+      A 1-4 slot works.
+      A 1-2 slot does not.
+    */
+
+    if (
+      SETTINGS.players <
+        minGolfers ||
+      SETTINGS.players >
+        maxGolfers
+    ) {
+      continue;
+    }
+
+    /*
+      Price.
+    */
+
     const priceMatch =
-      blockText.match(
+      detailText.match(
         /\$\s*[\d.,]+/
       );
 
@@ -742,72 +910,49 @@ function parseTeeTimesFromBody(bodyText) {
           : null
       );
 
-    const detailMatch =
-      blockText.match(
-        /\b(9|18)\s*\/\s*(\d)(?:\s*-\s*(\d))?\b/
-      );
+    if (!pricePerPerson) {
+      /*
+        We do not report a time unless we can
+        confidently extract its price.
+      */
 
-    let holes = null;
-    let minGolfers = null;
-    let maxGolfers = null;
-
-    if (detailMatch) {
-      holes =
-        Number(
-          detailMatch[1]
-        );
-
-      minGolfers =
-        Number(
-          detailMatch[2]
-        );
-
-      maxGolfers =
-        Number(
-          detailMatch[3] ||
-          detailMatch[2]
-        );
+      continue;
     }
 
-    const inWindow =
-      minutes !== null &&
-      earliest !== null &&
-      latest !== null &&
-      minutes >= earliest &&
-      minutes <= latest;
+    results.push({
+      time:
+        teeTime,
 
-    const enoughGolfers =
-      maxGolfers !== null &&
-      SETTINGS.players >=
-        minGolfers &&
-      SETTINGS.players <=
-        maxGolfers;
+      pricePerPerson,
 
-    if (
-      inWindow &&
-      enoughGolfers &&
-      pricePerPerson &&
-      detailMatch
-    ) {
-      rawTimes.push({
-        time,
-        pricePerPerson,
-        minGolfers,
-        maxGolfers,
-        holes,
-        context:
-          blockText
-      });
-    }
+      holes,
+
+      minGolfers,
+
+      maxGolfers,
+
+      context:
+        detailText
+    });
   }
+
+  /*
+    Remove duplicates.
+  */
 
   const seen =
     new Set();
 
-  return rawTimes.filter(
-    tee => {
+  return results.filter(
+    result => {
       const key =
-        `${tee.time}|${tee.pricePerPerson}|${tee.maxGolfers}|${tee.holes}`;
+        [
+          result.time,
+          result.pricePerPerson,
+          result.holes,
+          result.minGolfers,
+          result.maxGolfers
+        ].join("|");
 
       if (
         seen.has(key)
@@ -822,29 +967,30 @@ function parseTeeTimesFromBody(bodyText) {
   );
 }
 
+// ======================================================
+// CHECK ONE COURSE
+// ======================================================
+
 async function checkCourse(
   browser,
   course
 ) {
   console.log("");
-
   console.log(
-    "=================================="
+    "========================================"
   );
-
   console.log(
     course.name
   );
-
   console.log(
-    "=================================="
+    "========================================"
   );
 
   const context =
     await browser.newContext({
       viewport: {
         width: 1440,
-        height: 1000
+        height: 1100
       },
 
       locale:
@@ -856,6 +1002,14 @@ async function checkCourse(
 
   const page =
     await context.newPage();
+
+  const safeName =
+    course.name
+      .replace(
+        /[^a-z0-9]/gi,
+        "_"
+      )
+      .toLowerCase();
 
   try {
     console.log(
@@ -881,44 +1035,24 @@ async function checkCourse(
       page
     );
 
-    const dateWorked =
+    const dateConfirmed =
       await setGolfNowDate(
         page
       );
 
-    if (!dateWorked) {
-      console.log(
-        `ERROR: GolfNow did not switch to ${SETTINGS.date}.`
-      );
-
-      console.log(
-        "This course will not be reported to avoid false alerts."
-      );
-    } else {
-      console.log(
-        "Confirmed date:",
-        formatTargetDateForGolfNow(
-          SETTINGS.date
-        )
-      );
-    }
+    /*
+      Save screenshot and text whether it succeeds
+      or fails. This lets us diagnose GolfNow changes.
+    */
 
     await page.waitForTimeout(
-      2500
+      2000
     );
 
     const body =
       await getPageText(
         page
       );
-
-    const safeName =
-      course.name
-        .replace(
-          /[^a-z0-9]/gi,
-          "_"
-        )
-        .toLowerCase();
 
     await page.screenshot({
       path:
@@ -934,7 +1068,22 @@ async function checkCourse(
       "utf8"
     );
 
-    if (!dateWorked) {
+    /*
+      IMPORTANT:
+
+      Never report tee times unless GolfNow's displayed
+      date has been confirmed as the requested date.
+    */
+
+    if (!dateConfirmed) {
+      console.log(
+        "DATE NOT CONFIRMED."
+      );
+
+      console.log(
+        "Ignoring this course to prevent false alerts."
+      );
+
       return {
         course:
           course.name,
@@ -951,26 +1100,39 @@ async function checkCourse(
     }
 
     const matches =
-      parseTeeTimesFromBody(
+      parseTeeTimes(
         body
       );
 
     if (
-      !matches.length
+      matches.length === 0
     ) {
       console.log(
-        `No available tee times for ${SETTINGS.players} golfer(s) between ${SETTINGS.earliest} and ${SETTINGS.latest}.`
+        `No matching tee times for ${SETTINGS.players} golfers from ${SETTINGS.earliest} to ${SETTINGS.latest}.`
       );
     } else {
+      console.log("");
       console.log(
-        `FOUND ${matches.length} qualifying tee time(s):`
+        `FOUND ${matches.length} MATCHING TEE TIME(S)`
       );
 
       for (
         const tee of matches
       ) {
         console.log(
-          `⛳ ${tee.time} | ${tee.pricePerPerson} per person | ${tee.holes} holes | golfers ${tee.minGolfers}-${tee.maxGolfers}`
+          `⛳ ${tee.time}`
+        );
+
+        console.log(
+          `   ${tee.pricePerPerson} per person`
+        );
+
+        console.log(
+          `   ${tee.holes} holes`
+        );
+
+        console.log(
+          `   Accepts ${tee.minGolfers}-${tee.maxGolfers} golfers`
         );
       }
     }
@@ -994,6 +1156,31 @@ async function checkCourse(
       error.message
     );
 
+    /*
+      Save whatever GolfNow displayed before failure.
+    */
+
+    try {
+      const body =
+        await getPageText(
+          page
+        );
+
+      fs.writeFileSync(
+        `${safeName}.txt`,
+        body,
+        "utf8"
+      );
+
+      await page.screenshot({
+        path:
+          `${safeName}.png`,
+
+        fullPage:
+          true
+      });
+    } catch (_) {}
+
     return {
       course:
         course.name,
@@ -1016,35 +1203,36 @@ async function checkCourse(
   }
 }
 
+// ======================================================
+// MAIN
+// ======================================================
+
 async function main() {
   console.log("");
-
+  console.log(
+    "========================================"
+  );
   console.log(
     "GOLF TEE TIME WATCHER"
   );
-
-  console.log("");
-
   console.log(
-    "Date:",
-    SETTINGS.date
+    "========================================"
   );
 
   console.log(
-    "Time:",
-    SETTINGS.earliest,
-    "-",
-    SETTINGS.latest
+    `Date: ${SETTINGS.date}`
   );
 
   console.log(
-    "Golfers:",
-    SETTINGS.players
+    `Time: ${SETTINGS.earliest} - ${SETTINGS.latest}`
   );
 
   console.log(
-    "Courses:",
-    SETTINGS.courses.length
+    `Golfers: ${SETTINGS.players}`
+  );
+
+  console.log(
+    `Courses: ${SETTINGS.courses.length}`
   );
 
   const browser =
@@ -1060,11 +1248,14 @@ async function main() {
     for (
       const course of SETTINGS.courses
     ) {
-      courseResults.push(
+      const result =
         await checkCourse(
           browser,
           course
-        )
+        );
+
+      courseResults.push(
+        result
       );
     }
 
@@ -1072,41 +1263,56 @@ async function main() {
     await browser.close();
   }
 
-  const allMatches =
-    courseResults.flatMap(
-      result =>
-        result.matches.map(
-          match => ({
-            course:
-              result.course,
+  const matches =
+    [];
 
-            bookingUrl:
-              result.url,
+  for (
+    const result of courseResults
+  ) {
+    for (
+      const tee of result.matches
+    ) {
+      matches.push({
+        course:
+          result.course,
 
-            date:
-              SETTINGS.date,
+        date:
+          SETTINGS.date,
 
-            ...match
-          })
-        )
-    );
+        bookingUrl:
+          result.url,
+
+        time:
+          tee.time,
+
+        pricePerPerson:
+          tee.pricePerPerson,
+
+        holes:
+          tee.holes,
+
+        minGolfers:
+          tee.minGolfers,
+
+        maxGolfers:
+          tee.maxGolfers
+      });
+    }
+  }
 
   console.log("");
-
   console.log(
-    "=================================="
+    "========================================"
   );
-
   console.log(
     "FINAL RESULTS"
   );
-
   console.log(
-    "=================================="
+    "========================================"
   );
 
   if (
-    !allMatches.length
+    matches.length === 0
   ) {
     console.log(
       "No qualifying available tee times detected."
@@ -1114,49 +1320,88 @@ async function main() {
 
   } else {
     for (
-      const tee of allMatches
+      const tee of matches
     ) {
+      console.log("");
       console.log(
-        `${tee.course} | ${tee.time} | ${tee.pricePerPerson} per person | ${tee.holes} holes | golfers ${tee.minGolfers}-${tee.maxGolfers}`
+        `⛳ ${tee.course}`
+      );
+
+      console.log(
+        `   ${tee.date}`
+      );
+
+      console.log(
+        `   ${tee.time}`
+      );
+
+      console.log(
+        `   ${tee.pricePerPerson} per person`
+      );
+
+      console.log(
+        `   ${tee.holes} holes`
+      );
+
+      console.log(
+        `   ${tee.minGolfers}-${tee.maxGolfers} golfers`
+      );
+
+      console.log(
+        `   ${tee.bookingUrl}`
       );
     }
   }
 
-  const output = {
-    checkedAt:
-      new Date().toISOString(),
-
-    settings:
-      SETTINGS,
-
-    courses:
-      courseResults,
-
-    matches:
-      allMatches
-  };
+  /*
+    Save everything for the GitHub artifact.
+  */
 
   fs.writeFileSync(
     "results.json",
 
     JSON.stringify(
-      output,
+      {
+        checkedAt:
+          new Date().toISOString(),
+
+        requestedDate:
+          SETTINGS.date,
+
+        earliest:
+          SETTINGS.earliest,
+
+        latest:
+          SETTINGS.latest,
+
+        players:
+          SETTINGS.players,
+
+        courseResults,
+
+        matches
+      },
+
       null,
       2
     ),
 
     "utf8"
   );
+
+  console.log("");
+  console.log(
+    "Saved results.json"
+  );
 }
 
 main().catch(
   error => {
     console.error(
+      "FATAL ERROR:",
       error
     );
 
-    process.exit(
-      1
-    );
+    process.exit(1);
   }
 );
