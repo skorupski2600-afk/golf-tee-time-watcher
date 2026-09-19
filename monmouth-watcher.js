@@ -23,100 +23,52 @@ const SEEN_FILE =
   "seen-monmouth-alerts.json";
 
 // ======================================================
-// TIME HELPERS
+// TIME
 // ======================================================
 
 function timeToMinutes(value) {
   const m = String(value)
     .trim()
     .toUpperCase()
-    .match(
-      /(\d{1,2}):(\d{2})\s*(AM|PM)/
-    );
+    .match(/(\d{1,2}):(\d{2})\s*(AM|PM)/);
 
   if (!m) return null;
 
   let hour = Number(m[1]);
+  const minute = Number(m[2]);
+  const ampm = m[3];
 
-  const minute =
-    Number(m[2]);
-
-  const ampm =
-    m[3];
-
-  if (
-    ampm === "PM" &&
-    hour !== 12
-  ) {
+  if (ampm === "PM" && hour !== 12) {
     hour += 12;
   }
 
-  if (
-    ampm === "AM" &&
-    hour === 12
-  ) {
+  if (ampm === "AM" && hour === 12) {
     hour = 0;
   }
 
-  return (
-    hour * 60 +
-    minute
-  );
+  return hour * 60 + minute;
 }
 
 function normalizeTime(value) {
   const m = String(value)
     .trim()
     .toUpperCase()
-    .match(
-      /(\d{1,2}):(\d{2})\s*(AM|PM)/
-    );
+    .match(/(\d{1,2}):(\d{2})\s*(AM|PM)/);
 
   if (!m) return null;
 
-  return (
-    `${Number(m[1])}:` +
-    `${m[2]} ${m[3]}`
-  );
+  return `${Number(m[1])}:${m[2]} ${m[3]}`;
 }
 
 // ======================================================
-// DATE HELPERS
+// DATE
 // ======================================================
 
 function parseYmd(ymd) {
   const [y, m, d] =
-    ymd
-      .split("-")
-      .map(Number);
+    ymd.split("-").map(Number);
 
-  return {
-    y,
-    m,
-    d
-  };
-}
-
-function targetDateUtcNoon() {
-  const {
-    y,
-    m,
-    d
-  } =
-    parseYmd(
-      SETTINGS.date
-    );
-
-  return new Date(
-    Date.UTC(
-      y,
-      m - 1,
-      d,
-      12,
-      0,
-      0
-    )
-  );
+  return { y, m, d };
 }
 
 function easternTodayYmd() {
@@ -126,35 +78,31 @@ function easternTodayYmd() {
       {
         timeZone:
           "America/New_York",
-
         year:
           "numeric",
-
         month:
           "2-digit",
-
         day:
           "2-digit"
       }
-    )
-      .formatToParts(
-        new Date()
-      );
+    ).formatToParts(
+      new Date()
+    );
 
-  const map =
+  const values =
     Object.fromEntries(
       parts.map(
-        p => [
-          p.type,
-          p.value
+        part => [
+          part.type,
+          part.value
         ]
       )
     );
 
   return (
-    `${map.year}-` +
-    `${map.month}-` +
-    `${map.day}`
+    `${values.year}-` +
+    `${values.month}-` +
+    `${values.day}`
   );
 }
 
@@ -174,9 +122,7 @@ function daysFromToday() {
       today.y,
       today.m - 1,
       today.d,
-      12,
-      0,
-      0
+      12
     );
 
   const b =
@@ -184,9 +130,7 @@ function daysFromToday() {
       target.y,
       target.m - 1,
       target.d,
-      12,
-      0,
-      0
+      12
     );
 
   return Math.round(
@@ -210,9 +154,7 @@ function bookingMode() {
   }
 
   if (days <= 30) {
-    return (
-      "Resident Advanced Reservations"
-    );
+    return "Resident Advanced Reservations";
   }
 
   throw new Error(
@@ -221,11 +163,7 @@ function bookingMode() {
 }
 
 function foreupDateValue() {
-  const {
-    y,
-    m,
-    d
-  } =
+  const { y, m, d } =
     parseYmd(
       SETTINGS.date
     );
@@ -237,34 +175,11 @@ function foreupDateValue() {
   );
 }
 
-function prettyDate() {
-  return targetDateUtcNoon()
-    .toLocaleDateString(
-      "en-US",
-      {
-        timeZone:
-          "UTC",
-
-        weekday:
-          "short",
-
-        month:
-          "short",
-
-        day:
-          "numeric",
-
-        year:
-          "numeric"
-      }
-    );
-}
-
 // ======================================================
 // PAGE HELPERS
 // ======================================================
 
-async function pageText(page) {
+async function bodyText(page) {
   return await page
     .locator("body")
     .innerText();
@@ -283,9 +198,12 @@ async function saveDiagnostic(
       .toLowerCase();
 
   try {
+    const text =
+      await bodyText(page);
+
     fs.writeFileSync(
       `${safe}.txt`,
-      await pageText(page),
+      text,
       "utf8"
     );
 
@@ -298,57 +216,48 @@ async function saveDiagnostic(
     await page.screenshot({
       path:
         `${safe}.png`,
-
       fullPage:
         true
     });
-
   } catch (_) {}
 }
 
-async function clickText(
+async function clickVisibleText(
   page,
   text
 ) {
-  const candidates = [
+  const patterns = [
     page.getByRole(
       "button",
       {
-        name:
-          text,
-
-        exact:
-          true
+        name: text,
+        exact: true
       }
     ),
 
     page.getByRole(
       "link",
       {
-        name:
-          text,
-
-        exact:
-          true
+        name: text,
+        exact: true
       }
     ),
 
     page.getByText(
       text,
       {
-        exact:
-          true
+        exact: true
       }
     )
   ];
 
   for (
-    const locator of candidates
+    const locator of patterns
   ) {
     const count =
       Math.min(
         await locator.count(),
-        6
+        10
       );
 
     for (
@@ -367,20 +276,331 @@ async function clickText(
         }
 
         await item.click({
-          force:
-            true,
-
-          timeout:
-            5000
+          force: true,
+          timeout: 5000
         });
 
         return true;
-
       } catch (_) {}
     }
   }
 
   return false;
+}
+
+async function isLoggedIn(page) {
+  const text =
+    (
+      await bodyText(page)
+    ).toLowerCase();
+
+  return (
+    text.includes(
+      "my account"
+    ) &&
+    text.includes(
+      "logout"
+    )
+  );
+}
+
+// ======================================================
+// LOGIN
+// ======================================================
+
+async function findLoginFields(page) {
+  let email =
+    page
+      .getByPlaceholder(
+        "Email"
+      )
+      .first();
+
+  if (
+    !(await email.count())
+  ) {
+    email =
+      page
+        .locator(
+          'input[type="email"]:visible'
+        )
+        .first();
+  }
+
+  let password =
+    page
+      .getByPlaceholder(
+        "Password"
+      )
+      .first();
+
+  if (
+    !(await password.count())
+  ) {
+    password =
+      page
+        .locator(
+          'input[type="password"]:visible'
+        )
+        .first();
+  }
+
+  return {
+    email,
+    password
+  };
+}
+
+async function login(page) {
+  if (
+    await isLoggedIn(page)
+  ) {
+    console.log(
+      "Already logged in."
+    );
+
+    return true;
+  }
+
+  const emailValue =
+    (
+      process.env.MONMOUTH_EMAIL ||
+      process.env.MONMOUTH_USERNAME ||
+      ""
+    ).trim();
+
+  const passwordValue =
+    (
+      process.env.MONMOUTH_PASSWORD ||
+      ""
+    ).trim();
+
+  if (
+    !emailValue ||
+    !passwordValue
+  ) {
+    throw new Error(
+      "MONMOUTH_EMAIL or MONMOUTH_PASSWORD secret is missing."
+    );
+  }
+
+  let fields =
+    await findLoginFields(
+      page
+    );
+
+  /*
+    If the login modal is not already showing,
+    attempt to trigger it using one of the
+    reservation buttons.
+  */
+
+  if (
+    !(await fields.email.count()) ||
+    !(await fields.password.count())
+  ) {
+    console.log(
+      "Login box not visible yet. Attempting to open it..."
+    );
+
+    const mode =
+      bookingMode();
+
+    const triggered =
+      await clickVisibleText(
+        page,
+        mode
+      );
+
+    if (triggered) {
+      await page.waitForTimeout(
+        1500
+      );
+    }
+
+    fields =
+      await findLoginFields(
+        page
+      );
+  }
+
+  if (
+    !(await fields.email.count()) ||
+    !(await fields.password.count())
+  ) {
+    throw new Error(
+      "Could not find ForeUp login fields."
+    );
+  }
+
+  console.log(
+    "Entering ForeUp login..."
+  );
+
+  await fields.email.fill(
+    emailValue
+  );
+
+  await fields.password.fill(
+    passwordValue
+  );
+
+  const clicked =
+    await clickVisibleText(
+      page,
+      "Log In"
+    );
+
+  if (!clicked) {
+    throw new Error(
+      "Could not find Log In button."
+    );
+  }
+
+  const deadline =
+    Date.now() +
+    20000;
+
+  while (
+    Date.now() <
+    deadline
+  ) {
+    await page.waitForTimeout(
+      750
+    );
+
+    if (
+      await isLoggedIn(page)
+    ) {
+      console.log(
+        "Login successful."
+      );
+
+      return true;
+    }
+
+    const text =
+      (
+        await bodyText(page)
+      ).toLowerCase();
+
+    if (
+      text.includes(
+        "captcha"
+      ) ||
+      text.includes(
+        "verify you are human"
+      )
+    ) {
+      throw new Error(
+        "Human verification appeared."
+      );
+    }
+  }
+
+  throw new Error(
+    "Login did not complete."
+  );
+}
+
+// ======================================================
+// BOOKING MODE
+// ======================================================
+
+async function chooseBookingMode(
+  page,
+  mode
+) {
+  console.log(
+    `Wanted booking mode: ${mode}`
+  );
+
+  let text =
+    await bodyText(page);
+
+  if (
+    text
+      .toLowerCase()
+      .includes(
+        `booking as ${mode.toLowerCase()}`
+      )
+  ) {
+    console.log(
+      `Already booking as ${mode}.`
+    );
+
+    return true;
+  }
+
+  /*
+    From your screenshot, once logged in
+    the tee sheet has a Change button.
+  */
+
+  const changeClicked =
+    await clickVisibleText(
+      page,
+      "Change"
+    );
+
+  if (changeClicked) {
+    console.log(
+      "Clicked Change."
+    );
+
+    await page.waitForTimeout(
+      1500
+    );
+  }
+
+  text =
+    await bodyText(page);
+
+  if (
+    !text
+      .toLowerCase()
+      .includes(
+        mode.toLowerCase()
+      )
+  ) {
+    console.log(
+      `Booking option "${mode}" is not visible.`
+    );
+
+    return false;
+  }
+
+  const clicked =
+    await clickVisibleText(
+      page,
+      mode
+    );
+
+  if (!clicked) {
+    return false;
+  }
+
+  await page.waitForTimeout(
+    2500
+  );
+
+  const after =
+    (
+      await bodyText(page)
+    ).toLowerCase();
+
+  const success =
+    after.includes(
+      `booking as ${mode.toLowerCase()}`
+    );
+
+  console.log(
+    success
+      ? `Booking mode confirmed: ${mode}`
+      : `Could not confirm booking mode: ${mode}`
+  );
+
+  return success;
 }
 
 // ======================================================
@@ -408,36 +628,39 @@ async function selectFacility(
     i < count;
     i++
   ) {
-    const sel =
+    const select =
       selects.nth(i);
 
     try {
       const options =
-        await sel
+        await select
           .locator("option")
           .allTextContents();
 
-      const found =
-        options.some(
-          o =>
-            o
+      const exact =
+        options.find(
+          option =>
+            option
               .trim()
               .toLowerCase() ===
-            course
-              .toLowerCase()
+            course.toLowerCase()
         );
 
-      if (!found) {
+      if (!exact) {
         continue;
       }
 
-      await sel.selectOption({
+      await select.selectOption({
         label:
-          course
+          exact.trim()
       });
 
       await page.waitForTimeout(
-        2000
+        2500
+      );
+
+      console.log(
+        `Facility selected: ${course}`
       );
 
       return true;
@@ -446,260 +669,22 @@ async function selectFacility(
   }
 
   console.log(
-    `Could not select facility: ${course}`
+    `Facility dropdown could not select ${course}.`
   );
 
   return false;
 }
 
 // ======================================================
-// BOOKING MODE
+// DATE
 // ======================================================
 
-async function chooseBookingMode(
-  page,
-  mode
-) {
-  console.log(
-    `Booking mode: ${mode}`
-  );
-
-  const current =
-    (
-      await pageText(page)
-    )
-      .toLowerCase();
-
-  if (
-    current.includes(
-      `booking as ${mode.toLowerCase()}`
-    )
-  ) {
-    return true;
-  }
-
-  if (
-    current.includes(
-      "booking as"
-    ) &&
-    current.includes(
-      "change"
-    )
-  ) {
-    await clickText(
-      page,
-      "Change"
-    );
-
-    await page.waitForTimeout(
-      1200
-    );
-  }
-
-  const clicked =
-    await clickText(
-      page,
-      mode
-    );
-
-  if (!clicked) {
-    return false;
-  }
-
-  await page.waitForTimeout(
-    1500
-  );
-
-  return true;
-}
-
-// ======================================================
-// LOGIN
-// ======================================================
-
-async function loginIfNeeded(
-  page
-) {
-  const body =
-    (
-      await pageText(page)
-    )
-      .toLowerCase();
-
-  if (
-    body.includes(
-      "my account"
-    ) &&
-    body.includes(
-      "logout"
-    )
-  ) {
-    console.log(
-      "Already logged in."
-    );
-
-    return true;
-  }
-
-  const email =
-    (
-      process.env
-        .MONMOUTH_EMAIL ||
-
-      process.env
-        .MONMOUTH_USERNAME ||
-
-      ""
-    )
-      .trim();
-
-  const password =
-    (
-      process.env
-        .MONMOUTH_PASSWORD ||
-
-      ""
-    )
-      .trim();
-
-  if (
-    !email ||
-    !password
-  ) {
-    throw new Error(
-      "Monmouth login secret is missing."
-    );
-  }
-
-  let emailBox =
-    page
-      .getByPlaceholder(
-        "Email"
-      )
-      .first();
-
-  if (
-    !(await emailBox.count())
-  ) {
-    emailBox =
-      page
-        .locator(
-          'input[type="email"]:visible'
-        )
-        .first();
-  }
-
-  let passwordBox =
-    page
-      .getByPlaceholder(
-        "Password"
-      )
-      .first();
-
-  if (
-    !(await passwordBox.count())
-  ) {
-    passwordBox =
-      page
-        .locator(
-          'input[type="password"]:visible'
-        )
-        .first();
-  }
-
-  if (
-    !(await emailBox.count()) ||
-    !(await passwordBox.count())
-  ) {
-    throw new Error(
-      "Login form was not found."
-    );
-  }
-
-  await emailBox.fill(
-    email
-  );
-
-  await passwordBox.fill(
-    password
-  );
-
-  const clicked =
-    await clickText(
-      page,
-      "Log In"
-    );
-
-  if (!clicked) {
-    throw new Error(
-      "Log In button was not found."
-    );
-  }
-
-  const deadline =
-    Date.now() +
-    15000;
-
-  while (
-    Date.now() <
-    deadline
-  ) {
-    await page.waitForTimeout(
-      700
-    );
-
-    const text =
-      (
-        await pageText(page)
-      )
-        .toLowerCase();
-
-    if (
-      text.includes(
-        "my account"
-      ) &&
-      text.includes(
-        "logout"
-      )
-    ) {
-      console.log(
-        "Login successful."
-      );
-
-      return true;
-    }
-
-    if (
-      text.includes(
-        "captcha"
-      ) ||
-      text.includes(
-        "verify you are human"
-      )
-    ) {
-      throw new Error(
-        "Human verification appeared."
-      );
-    }
-  }
-
-  throw new Error(
-    "Login did not complete."
-  );
-}
-
-// ======================================================
-// SET DATE
-// ======================================================
-
-async function setDate(
-  page
-) {
+async function setDate(page) {
   const wanted =
     foreupDateValue();
 
   console.log(
-    `Setting date: ${wanted}`
+    `Setting date to ${wanted}`
   );
 
   const inputs =
@@ -720,16 +705,7 @@ async function setDate(
 
     try {
       const value =
-        await input
-          .inputValue();
-
-      const placeholder =
-        (
-          await input
-            .getAttribute(
-              "placeholder"
-            )
-        ) || "";
+        await input.inputValue();
 
       const type =
         (
@@ -739,30 +715,32 @@ async function setDate(
             )
         ) || "";
 
-      const looksDate =
+      const placeholder =
+        (
+          await input
+            .getAttribute(
+              "placeholder"
+            )
+        ) || "";
+
+      const looksLikeDate =
         /^\d{2}-\d{2}-\d{4}$/
           .test(value) ||
+        /date/i.test(
+          placeholder
+        ) ||
+        type === "date";
 
-        /date/i
-          .test(
-            placeholder
-          ) ||
-
-        type ===
-          "date";
-
-      if (!looksDate) {
+      if (!looksLikeDate) {
         continue;
       }
 
       if (
-        type ===
-        "date"
+        type === "date"
       ) {
         await input.fill(
           SETTINGS.date
         );
-
       } else {
         await input.fill(
           wanted
@@ -778,41 +756,69 @@ async function setDate(
         .catch(() => {});
 
       await page.waitForTimeout(
-        2500
+        3000
       );
 
-      const now =
-        await input
-          .inputValue();
+      console.log(
+        "Date field updated."
+      );
 
-      if (
-        now === wanted ||
-        now === SETTINGS.date
-      ) {
-        return true;
-      }
+      return true;
 
     } catch (_) {}
   }
+
+  console.log(
+    "Could not find date field."
+  );
 
   return false;
 }
 
 // ======================================================
-// PARSE TEE TIMES
+// PLAYERS / HOLES
 // ======================================================
 
-function parseTeeTimes(
-  text
-) {
+async function setPlayersAndHoles(page) {
+  /*
+    Clicking these is safe: they only filter
+    the tee-time list. No reservation is made.
+  */
+
+  await clickVisibleText(
+    page,
+    String(
+      SETTINGS.players
+    )
+  ).catch(() => {});
+
+  await page.waitForTimeout(
+    700
+  );
+
+  await clickVisibleText(
+    page,
+    String(
+      SETTINGS.holes
+    )
+  ).catch(() => {});
+
+  await page.waitForTimeout(
+    1200
+  );
+}
+
+// ======================================================
+// TEE TIME PARSER
+// ======================================================
+
+function parseTeeTimes(text) {
   const lines =
     text
-      .split(
-        /\r?\n/
-      )
+      .split(/\r?\n/)
       .map(
-        s =>
-          s
+        line =>
+          line
             .replace(
               /\u00a0/g,
               " "
@@ -821,7 +827,7 @@ function parseTeeTimes(
       )
       .filter(Boolean);
 
-  const timeRx =
+  const timeRegex =
     /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i;
 
   const earliest =
@@ -834,8 +840,7 @@ function parseTeeTimes(
       SETTINGS.latest
     );
 
-  const results =
-    [];
+  const matches = [];
 
   for (
     let i = 0;
@@ -843,7 +848,7 @@ function parseTeeTimes(
     i++
   ) {
     if (
-      !timeRx.test(
+      !timeRegex.test(
         lines[i]
       )
     ) {
@@ -855,21 +860,20 @@ function parseTeeTimes(
         lines[i]
       );
 
-    const mins =
+    const minutes =
       timeToMinutes(
         time
       );
 
     if (
-      mins === null ||
-      mins < earliest ||
-      mins > latest
+      minutes === null ||
+      minutes < earliest ||
+      minutes > latest
     ) {
       continue;
     }
 
-    const blockLines =
-      [];
+    const details = [];
 
     for (
       let j = i + 1;
@@ -878,102 +882,113 @@ function parseTeeTimes(
       j++
     ) {
       if (
-        timeRx.test(
+        timeRegex.test(
           lines[j]
         )
       ) {
         break;
       }
 
-      blockLines.push(
+      details.push(
         lines[j]
       );
     }
 
-    const upper =
-      blockLines.map(
-        x =>
-          x.toUpperCase()
+    const block =
+      details.join(" | ");
+
+    /*
+      ForeUp tee cards in your screenshot expose
+      values like:
+
+      FRONT
+      18
+      4
+    */
+
+    const holeMatch =
+      block.match(
+        /(?:^|\D)(9|18)(?:\D|$)/
       );
 
-    const numeric =
-      blockLines
-        .filter(
-          x =>
-            /^\d+$/
-              .test(x)
-        )
-        .map(Number);
-
     const holes =
-      numeric.includes(18)
-        ? 18
-        : numeric.includes(9)
-          ? 9
-          : null;
+      holeMatch
+        ? Number(
+            holeMatch[1]
+          )
+        : null;
 
-    const playerNumbers =
-      numeric.filter(
+    const numbers =
+      details
+        .map(
+          item =>
+            item.match(
+              /^\d+$/
+            )
+        )
+        .filter(Boolean)
+        .map(
+          match =>
+            Number(
+              match[0]
+            )
+        );
+
+    const playerValues =
+      numbers.filter(
         n =>
           n >= 1 &&
           n <= 4
       );
 
     const spots =
-      playerNumbers.length
-        ? playerNumbers[
-            playerNumbers.length - 1
+      playerValues.length
+        ? playerValues[
+            playerValues.length - 1
           ]
         : null;
 
     if (
-      holes !==
-      SETTINGS.holes
+      holes !== null &&
+      holes !== SETTINGS.holes
     ) {
       continue;
     }
 
     if (
-      spots === null ||
-      spots <
-        SETTINGS.players
+      spots !== null &&
+      spots < SETTINGS.players
     ) {
       continue;
     }
 
-    results.push({
+    /*
+      Since we intend to select the 4-player
+      filter on ForeUp, a returned card can also
+      be accepted even if its text extraction
+      doesn't expose the icon's numeric value.
+    */
+
+    matches.push({
       time,
-      holes,
-      spots,
-
-      side:
-        upper.includes(
-          "FRONT"
-        )
-          ? "FRONT"
-          : upper.includes(
-              "BACK"
-            )
-            ? "BACK"
-            : null,
-
+      holes:
+        holes ||
+        SETTINGS.holes,
+      spots:
+        spots ||
+        SETTINGS.players,
       context:
-        blockLines.join(
-          " | "
-        )
+        block
     });
   }
 
   const seen =
     new Set();
 
-  return results.filter(
-    t => {
+  return matches.filter(
+    tee => {
       const key =
-        `${t.time}|` +
-        `${t.holes}|` +
-        `${t.spots}|` +
-        `${t.side || ""}`;
+        `${tee.time}|${tee.holes}|${tee.spots}`;
 
       if (
         seen.has(key)
@@ -1008,24 +1023,19 @@ function loadSeen() {
         "utf8"
       )
     );
-
   } catch (_) {
     return {};
   }
 }
 
-function saveSeen(
-  seen
-) {
+function saveSeen(seen) {
   fs.writeFileSync(
     SEEN_FILE,
-
     JSON.stringify(
       seen,
       null,
       2
     ),
-
     "utf8"
   );
 }
@@ -1041,11 +1051,9 @@ async function sendNtfy(
 ) {
   const topic =
     (
-      process.env
-        .NTFY_TOPIC ||
+      process.env.NTFY_TOPIC ||
       ""
-    )
-      .trim();
+    ).trim();
 
   if (!topic) {
     console.log(
@@ -1056,14 +1064,9 @@ async function sendNtfy(
   }
 
   const headers = {
-    Title:
-      title,
-
-    Priority:
-      "high",
-
-    Tags:
-      "golf"
+    Title: title,
+    Priority: "high",
+    Tags: "golf"
   };
 
   if (clickUrl) {
@@ -1074,21 +1077,14 @@ async function sendNtfy(
   const response =
     await fetch(
       `https://ntfy.sh/${encodeURIComponent(topic)}`,
-
       {
-        method:
-          "POST",
-
+        method: "POST",
         headers,
-
-        body:
-          message
+        body: message
       }
     );
 
-  if (
-    !response.ok
-  ) {
+  if (!response.ok) {
     throw new Error(
       `ntfy HTTP ${response.status}`
     );
@@ -1097,23 +1093,10 @@ async function sendNtfy(
   return true;
 }
 
-async function sendManualTest(
-  mode
-) {
+async function sendManualTest(mode) {
   if (
-    process.env
-      .GITHUB_EVENT_NAME !==
+    process.env.GITHUB_EVENT_NAME !==
     "workflow_dispatch"
-  ) {
-    return;
-  }
-
-  if (
-    !(
-      process.env
-        .NTFY_TOPIC ||
-      ""
-    ).trim()
   ) {
     return;
   }
@@ -1126,34 +1109,27 @@ async function sendManualTest(
 Date: ${SETTINGS.date}
 Mode: ${mode}
 Time: ${SETTINGS.earliest} - ${SETTINGS.latest}
-Golfers: ${SETTINGS.players}
-Courses: ${SETTINGS.courses.length}`
+Golfers: ${SETTINGS.players}`
     );
 
     console.log(
       "Monmouth test phone notification sent."
     );
-
   } catch (error) {
     console.log(
-      "Monmouth test notification failed:",
+      "Test notification failed:",
       error.message
     );
   }
 }
 
-async function sendNewAlerts(
-  matches
-) {
+async function sendNewAlerts(matches) {
   const seen =
     loadSeen();
 
-  let sentCount =
-    0;
+  let count = 0;
 
-  for (
-    const tee of matches
-  ) {
+  for (const tee of matches) {
     const key =
       [
         tee.course,
@@ -1161,8 +1137,7 @@ async function sendNewAlerts(
         tee.time,
         tee.holes,
         tee.spots
-      ]
-        .join("|");
+      ].join("|");
 
     if (
       seen[key]
@@ -1178,42 +1153,39 @@ async function sendNewAlerts(
 `${tee.course}
 ${tee.date} at ${tee.time}
 ${tee.holes} holes
-${tee.spots} spot(s) available
-Need ${SETTINGS.players} golfers
+Available for ${SETTINGS.players} golfers
 
 Tap to open ForeUp`;
 
     try {
-      const ok =
+      const sent =
         await sendNtfy(
           `Monmouth tee time: ${tee.time}`,
           message,
           tee.bookingUrl
         );
 
-      if (ok) {
+      if (sent) {
         seen[key] =
           new Date()
             .toISOString();
 
-        sentCount++;
+        count++;
 
         console.log(
           `Phone alert sent: ${tee.course} ${tee.time}`
         );
       }
-
     } catch (error) {
       console.log(
-        "Phone alert failed:",
-        error.message
+        `Phone alert failed: ${error.message}`
       );
     }
   }
 
   saveSeen(seen);
 
-  return sentCount;
+  return count;
 }
 
 // ======================================================
@@ -1227,11 +1199,9 @@ async function main() {
   console.log(
     "========================================"
   );
-
   console.log(
     "MONMOUTH COUNTY TEE TIME WATCHER"
   );
-
   console.log(
     "========================================"
   );
@@ -1239,27 +1209,21 @@ async function main() {
   console.log(
     `Today ET:  ${easternTodayYmd()}`
   );
-
   console.log(
     `Target:    ${SETTINGS.date}`
   );
-
   console.log(
     `Days away: ${daysFromToday()}`
   );
-
   console.log(
     `Mode:      ${mode}`
   );
-
   console.log(
     `Time:      ${SETTINGS.earliest} - ${SETTINGS.latest}`
   );
-
   console.log(
     `Golfers:   ${SETTINGS.players}`
   );
-
   console.log(
     `Courses:   ${SETTINGS.courses.length}`
   );
@@ -1270,23 +1234,16 @@ async function main() {
 
   const browser =
     await chromium.launch({
-      headless:
-        true
+      headless: true
     });
 
   const context =
     await browser.newContext({
       viewport: {
-        width:
-          1440,
-
-        height:
-          1000
+        width: 1440,
+        height: 1000
       },
-
-      locale:
-        "en-US",
-
+      locale: "en-US",
       timezoneId:
         "America/New_York"
     });
@@ -1294,16 +1251,18 @@ async function main() {
   const page =
     await context.newPage();
 
-  const courseResults =
-    [];
+  const courseResults = [];
 
   try {
+    console.log(
+      "Opening ForeUp..."
+    );
+
     await page.goto(
       START_URL,
       {
         waitUntil:
           "domcontentloaded",
-
         timeout:
           60000
       }
@@ -1313,51 +1272,36 @@ async function main() {
       4000
     );
 
-    await selectFacility(
-      page,
-      "Hominy Hill"
-    )
-      .catch(
-        () => {}
-      );
+    /*
+      NEW ORDER:
+      Login first.
+    */
 
-    if (
-      !(
-        await chooseBookingMode(
-          page,
-          mode
-        )
-      )
-    ) {
-      throw new Error(
-        `Could not choose booking mode: ${mode}`
-      );
-    }
-
-    await page.waitForTimeout(
-      1000
-    );
-
-    await loginIfNeeded(
-      page
-    );
+    await login(page);
 
     await page.waitForTimeout(
       3000
     );
 
-    if (
-      !(
-        await chooseBookingMode(
-          page,
-          mode
-        )
-      )
-    ) {
+    /*
+      Then choose the correct booking mode.
+    */
+
+    const modeSet =
+      await chooseBookingMode(
+        page,
+        mode
+      );
+
+    if (!modeSet) {
       throw new Error(
-        `Could not confirm booking mode after login: ${mode}`
+        `Could not set booking mode to ${mode}.`
       );
     }
+
+    /*
+      Then cycle through the four courses.
+    */
 
     for (
       const course
@@ -1367,55 +1311,49 @@ async function main() {
       console.log(
         "----------------------------------------"
       );
-      console.log(
-        course
-      );
+      console.log(course);
       console.log(
         "----------------------------------------"
       );
 
       try {
-        if (
-          !(
-            await selectFacility(
-              page,
-              course
-            )
-          )
-        ) {
+        const selected =
+          await selectFacility(
+            page,
+            course
+          );
+
+        if (!selected) {
           throw new Error(
-            "Facility selection failed."
+            "Could not select facility."
           );
         }
 
-        if (
-          !(
-            await setDate(
-              page
-            )
-          )
-        ) {
+        const dateSet =
+          await setDate(page);
+
+        if (!dateSet) {
           throw new Error(
-            "Could not set requested date."
+            "Could not set target date."
           );
         }
+
+        await setPlayersAndHoles(
+          page
+        );
 
         await page.waitForTimeout(
-          3000
+          2500
         );
 
         const text =
-          await pageText(
-            page
-          );
+          await bodyText(page);
 
         const matches =
-          parseTeeTimes(
-            text
-          );
+          parseTeeTimes(text);
 
         console.log(
-          `Found ${matches.length} qualifying tee time(s).`
+          `Qualifying tee times: ${matches.length}`
         );
 
         for (
@@ -1434,10 +1372,8 @@ async function main() {
 
         courseResults.push({
           course,
-
           bookingUrl:
             page.url(),
-
           matches
         });
 
@@ -1453,15 +1389,11 @@ async function main() {
 
         courseResults.push({
           course,
-
           bookingUrl:
             page.url(),
-
           error:
             error.message,
-
-          matches:
-            []
+          matches: []
         });
       }
     }
@@ -1484,24 +1416,20 @@ async function main() {
   }
 
   const matches =
-    courseResults
-      .flatMap(
-        result =>
-          result.matches.map(
-            tee => ({
-              course:
-                result.course,
-
-              date:
-                SETTINGS.date,
-
-              bookingUrl:
-                result.bookingUrl,
-
-              ...tee
-            })
-          )
-      );
+    courseResults.flatMap(
+      result =>
+        result.matches.map(
+          tee => ({
+            course:
+              result.course,
+            date:
+              SETTINGS.date,
+            bookingUrl:
+              result.bookingUrl,
+            ...tee
+          })
+        )
+    );
 
   const alertsSent =
     await sendNewAlerts(
@@ -1510,7 +1438,6 @@ async function main() {
 
   fs.writeFileSync(
     "monmouth-results.json",
-
     JSON.stringify(
       {
         checkedAt:
@@ -1531,11 +1458,9 @@ async function main() {
 
         alertsSent
       },
-
       null,
       2
     ),
-
     "utf8"
   );
 
@@ -1557,20 +1482,15 @@ async function main() {
   console.log(
     `New phone alerts sent: ${alertsSent}`
   );
-
-  console.log(
-    "Saved monmouth-results.json"
-  );
 }
 
-main()
-  .catch(
-    error => {
-      console.error(
-        "FATAL ERROR:",
-        error.message
-      );
+main().catch(
+  error => {
+    console.error(
+      "FATAL ERROR:",
+      error.message
+    );
 
-      process.exit(1);
-    }
-  );
+    process.exit(1);
+  }
+);
