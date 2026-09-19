@@ -1,1 +1,62 @@
+name: Check Monmouth Tee Times
 
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+
+      - name: Get repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install packages
+        run: npm install
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Restore Monmouth alert history
+        uses: actions/cache/restore@v4
+        with:
+          path: seen-monmouth-alerts.json
+          key: monmouth-alert-history-${{ github.run_id }}
+          restore-keys: |
+            monmouth-alert-history-
+
+      - name: Check Monmouth tee times
+        env:
+          MONMOUTH_EMAIL: ${{ secrets.MONMOUTH_EMAIL }}
+          MONMOUTH_PASSWORD: ${{ secrets.MONMOUTH_PASSWORD }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: node monmouth-watcher.js
+
+      - name: Save Monmouth alert history
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: seen-monmouth-alerts.json
+          key: monmouth-alert-history-${{ github.run_id }}
+
+      - name: Save Monmouth results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: monmouth-check-results
+          path: |
+            monmouth-results.json
+            seen-monmouth-alerts.json
+            monmouth_*.png
+            monmouth_*.txt
+          retention-days: 7
