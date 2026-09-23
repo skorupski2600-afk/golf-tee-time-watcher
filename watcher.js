@@ -2,9 +2,9 @@ const { chromium } = require("playwright");
 const fs = require("fs");
 
 const SETTINGS = {
-  date: "2026-09-26",
+  date: "2026-10-02",
   earliest: "7:00 AM",
-  latest: "11:00 AM",
+  latest: "9:00 AM",
   players: 4,
 
   courses: [
