@@ -188,8 +188,7 @@ async function getDisplayedDateObject(page) {
 }
 
 async function findDateNavigationContainer(page) {
-  const currentText =
-    await getDisplayedDate(page);
+  const currentText = await getDisplayedDate(page);
 
   if (!currentText) return null;
 
@@ -205,10 +204,9 @@ async function findDateNavigationContainer(page) {
 
   for (let level = 0; level < 7; level++) {
     try {
-      const controls =
-        container.locator(
-          'button, a, [role="button"]'
-        );
+      const controls = container.locator(
+        'button, a, [role="button"]'
+      );
 
       if ((await controls.count()) >= 2) {
         return container;
@@ -222,117 +220,243 @@ async function findDateNavigationContainer(page) {
 }
 
 async function clickDateArrow(page, direction) {
-  const before =
-    await getDisplayedDate(page);
+  const before = await getDisplayedDate(page);
 
-  if (!before) return false;
-
-  const container =
-    await findDateNavigationContainer(page);
-
-  if (!container) return false;
-
-  const controls =
-    container.locator(
-      'button, a, [role="button"]'
-    );
-
-  const count =
-    await controls.count();
-
-  const visible = [];
-
-  for (let i = 0; i < count; i++) {
-    try {
-      const item =
-        controls.nth(i);
-
-      if (!(await item.isVisible())) {
-        continue;
-      }
-
-      const aria =
-        (await item.getAttribute("aria-label")) || "";
-
-      const title =
-        (await item.getAttribute("title")) || "";
-
-      const text =
-        await item.innerText().catch(() => "");
-
-      visible.push({
-        item,
-        label:
-          `${aria} ${title} ${text}`
-            .trim()
-            .toLowerCase()
-      });
-    } catch (_) {}
-  }
-
-  let chosen = null;
-
-  for (const candidate of visible) {
-    if (
-      direction === "next" &&
-      /(next|right|forward)/i.test(candidate.label)
-    ) {
-      chosen = candidate.item;
-      break;
-    }
-
-    if (
-      direction === "previous" &&
-      /(previous|prev|left|back)/i.test(candidate.label)
-    ) {
-      chosen = candidate.item;
-      break;
-    }
-  }
-
-  if (!chosen) {
-    chosen =
-      direction === "next"
-        ? visible[visible.length - 1]?.item
-        : visible[0]?.item;
-  }
-
-  if (!chosen) return false;
-
-  try {
-    await chosen.click({
-      force: true,
-      timeout: 4000
-    });
-  } catch (error) {
+  if (!before) {
     console.log(
-      "Arrow click failed:",
-      error.message
+      "Could not determine current displayed date."
     );
 
     return false;
   }
 
-  const deadline =
-    Date.now() + 7000;
+  const container =
+    await findDateNavigationContainer(page);
 
-  while (Date.now() < deadline) {
-    await page.waitForTimeout(500);
+  if (!container) {
+    console.log(
+      "Could not locate date navigation area."
+    );
 
-    const after =
-      await getDisplayedDate(page);
+    return false;
+  }
 
-    if (
-      after &&
-      after !== before
-    ) {
-      console.log(
-        `${before} -> ${after}`
+  const selectors =
+    direction === "next"
+      ? [
+          '[aria-label*="next" i]',
+          '[title*="next" i]',
+          '[aria-label*="right" i]',
+          '[title*="right" i]',
+          'button:has-text("Next")',
+          'a:has-text("Next")'
+        ]
+      : [
+          '[aria-label*="previous" i]',
+          '[aria-label*="prev" i]',
+          '[title*="previous" i]',
+          '[title*="prev" i]',
+          '[aria-label*="left" i]',
+          '[title*="left" i]',
+          'button:has-text("Previous")',
+          'a:has-text("Previous")'
+        ];
+
+  let chosen = null;
+
+  for (const selector of selectors) {
+    try {
+      const matches =
+        container.locator(selector);
+
+      const count =
+        await matches.count();
+
+      for (let i = 0; i < count; i++) {
+        const item =
+          matches.nth(i);
+
+        if (
+          await item
+            .isVisible()
+            .catch(() => false)
+        ) {
+          chosen = item;
+          break;
+        }
+      }
+
+      if (chosen) {
+        break;
+      }
+    } catch (_) {}
+  }
+
+  if (!chosen) {
+    const controls =
+      container.locator(
+        'button, a, [role="button"]'
       );
 
-      return true;
+    const count =
+      await controls.count();
+
+    const candidates = [];
+
+    for (let i = 0; i < count; i++) {
+      try {
+        const item =
+          controls.nth(i);
+
+        if (!(await item.isVisible())) {
+          continue;
+        }
+
+        const box =
+          await item.boundingBox();
+
+        if (!box) continue;
+
+        const aria =
+          (await item.getAttribute(
+            "aria-label"
+          )) || "";
+
+        const title =
+          (await item.getAttribute(
+            "title"
+          )) || "";
+
+        const text =
+          await item
+            .innerText()
+            .catch(() => "");
+
+        const html =
+          await item
+            .innerHTML()
+            .catch(() => "");
+
+        candidates.push({
+          item,
+          box,
+          description:
+            `${aria} ${title} ${text} ${html}`
+              .trim()
+              .toLowerCase()
+        });
+      } catch (_) {}
+    }
+
+    for (const candidate of candidates) {
+      if (
+        direction === "next" &&
+        /(next|right|forward|chevron-right|arrow-right)/i.test(
+          candidate.description
+        )
+      ) {
+        chosen =
+          candidate.item;
+
+        break;
+      }
+
+      if (
+        direction === "previous" &&
+        /(previous|prev|left|back|chevron-left|arrow-left)/i.test(
+          candidate.description
+        )
+      ) {
+        chosen =
+          candidate.item;
+
+        break;
+      }
+    }
+
+    if (
+      !chosen &&
+      candidates.length >= 2
+    ) {
+      candidates.sort(
+        (a, b) =>
+          a.box.x - b.box.x
+      );
+
+      chosen =
+        direction === "next"
+          ? candidates[
+              candidates.length - 1
+            ].item
+          : candidates[0].item;
     }
   }
+
+  if (!chosen) {
+    console.log(
+      `Could not identify ${direction} date arrow.`
+    );
+
+    return false;
+  }
+
+  for (
+    let attempt = 1;
+    attempt <= 3;
+    attempt++
+  ) {
+    try {
+      console.log(
+        `Clicking ${direction} date arrow (attempt ${attempt})...`
+      );
+
+      await chosen
+        .scrollIntoViewIfNeeded()
+        .catch(() => {});
+
+      await chosen.click({
+        force: true,
+        timeout: 5000
+      });
+
+      const deadline =
+        Date.now() + 10000;
+
+      while (
+        Date.now() < deadline
+      ) {
+        await page.waitForTimeout(
+          500
+        );
+
+        const after =
+          await getDisplayedDate(page);
+
+        if (
+          after &&
+          after !== before
+        ) {
+          console.log(
+            `${before} -> ${after}`
+          );
+
+          return true;
+        }
+      }
+    } catch (error) {
+      console.log(
+        `Date arrow attempt ${attempt} failed: ${error.message}`
+      );
+    }
+
+    await page.waitForTimeout(
+      1000
+    );
+  }
+
+  console.log(
+    `Date did not move from ${before}.`
+  );
 
   return false;
 }
@@ -344,18 +468,29 @@ async function setCourseDateWithArrows(page) {
   let current =
     await getDisplayedDateObject(page);
 
-  if (!current) return false;
+  if (!current) {
+    return false;
+  }
 
   let diff =
-    dayDifference(current, target);
+    dayDifference(
+      current,
+      target
+    );
 
   console.log(
     `Moving ${diff} day(s) to ${expectedDateText()}`
   );
 
-  if (diff === 0) return true;
+  if (diff === 0) {
+    return true;
+  }
 
   if (Math.abs(diff) > 31) {
+    console.log(
+      "Requested date is more than 31 days away."
+    );
+
     return false;
   }
 
@@ -376,14 +511,22 @@ async function setCourseDateWithArrows(page) {
         direction
       );
 
-    if (!moved) return false;
+    if (!moved) {
+      return false;
+    }
 
-    await page.waitForTimeout(900);
+    await page.waitForTimeout(
+      900
+    );
 
     current =
-      await getDisplayedDateObject(page);
+      await getDisplayedDateObject(
+        page
+      );
 
-    if (!current) return false;
+    if (!current) {
+      return false;
+    }
 
     diff =
       dayDifference(
@@ -397,7 +540,17 @@ async function setCourseDateWithArrows(page) {
   const final =
     await getDisplayedDate(page);
 
-  return final === expectedDateText();
+  if (
+    final !== expectedDateText()
+  ) {
+    console.log(
+      `Final displayed date was ${final}, expected ${expectedDateText()}.`
+    );
+
+    return false;
+  }
+
+  return true;
 }
 
 async function clickViewTeeTimes(
@@ -411,17 +564,25 @@ async function clickViewTeeTimes(
   const candidates = [
     page.getByRole(
       "button",
-      { name: /^view tee times$/i }
+      {
+        name:
+          /^view tee times$/i
+      }
     ),
 
     page.getByRole(
       "link",
-      { name: /^view tee times$/i }
+      {
+        name:
+          /^view tee times$/i
+      }
     ),
 
     page.getByText(
       "View Tee Times",
-      { exact: true }
+      {
+        exact: true
+      }
     )
   ];
 
@@ -432,12 +593,18 @@ async function clickViewTeeTimes(
         8
       );
 
-    for (let i = 0; i < count; i++) {
+    for (
+      let i = 0;
+      i < count;
+      i++
+    ) {
       try {
         const item =
           locator.nth(i);
 
-        if (!(await item.isVisible())) {
+        if (
+          !(await item.isVisible())
+        ) {
           continue;
         }
 
@@ -446,7 +613,9 @@ async function clickViewTeeTimes(
           timeout: 5000
         });
 
-        await page.waitForTimeout(5000);
+        await page.waitForTimeout(
+          5000
+        );
 
         const text =
           await getPageText(page);
@@ -517,10 +686,12 @@ async function validateFullTeeSheet(
     );
 
   const shortDate =
-    expectedDateText().toLowerCase();
+    expectedDateText()
+      .toLowerCase();
 
   const longDate =
-    expectedLongDateText().toLowerCase();
+    expectedLongDateText()
+      .toLowerCase();
 
   const datePresent =
     lower.includes(shortDate) ||
@@ -531,13 +702,17 @@ async function validateFullTeeSheet(
 
   console.log(
     `Full sheet course check: ${
-      coursePresent ? "PASS" : "FAIL"
+      coursePresent
+        ? "PASS"
+        : "FAIL"
     }`
   );
 
   console.log(
     `Full sheet date check: ${
-      datePresent ? "PASS" : "NOT VISIBLE"
+      datePresent
+        ? "PASS"
+        : "NOT VISIBLE"
     }`
   );
 
@@ -545,33 +720,50 @@ async function validateFullTeeSheet(
 }
 
 function normalizePrice(raw) {
-  if (!raw) return null;
+  if (!raw) {
+    return null;
+  }
 
   const cleaned =
-    raw.replace(/[^\d.]/g, "");
+    raw.replace(
+      /[^\d.]/g,
+      ""
+    );
 
-  if (!cleaned) return null;
+  if (!cleaned) {
+    return null;
+  }
 
-  if (cleaned.includes(".")) {
+  if (
+    cleaned.includes(".")
+  ) {
     const value =
       Number(cleaned);
 
-    return Number.isFinite(value)
+    return Number.isFinite(
+      value
+    )
       ? `$${value.toFixed(2)}`
       : null;
   }
 
-  if (cleaned.length >= 3) {
+  if (
+    cleaned.length >= 3
+  ) {
     const dollars =
       cleaned.slice(0, -2);
 
     const cents =
       cleaned.slice(-2);
 
-    return `$${Number(dollars)}.${cents}`;
+    return `$${Number(
+      dollars
+    )}.${cents}`;
   }
 
-  return `$${Number(cleaned).toFixed(2)}`;
+  return `$${Number(
+    cleaned
+  ).toFixed(2)}`;
 }
 
 function parseTeeTimes(text) {
@@ -581,7 +773,10 @@ function parseTeeTimes(text) {
       .map(
         line =>
           line
-            .replace(/\u00a0/g, " ")
+            .replace(
+              /\u00a0/g,
+              " "
+            )
             .trim()
       )
       .filter(Boolean);
@@ -601,16 +796,26 @@ function parseTeeTimes(text) {
 
   const results = [];
 
-  for (let i = 0; i < lines.length; i++) {
-    if (!timeRegex.test(lines[i])) {
+  for (
+    let i = 0;
+    i < lines.length;
+    i++
+  ) {
+    if (
+      !timeRegex.test(lines[i])
+    ) {
       continue;
     }
 
     const teeTime =
-      normalizeTime(lines[i]);
+      normalizeTime(
+        lines[i]
+      );
 
     const minutes =
-      timeToMinutes(teeTime);
+      timeToMinutes(
+        teeTime
+      );
 
     if (
       minutes === null ||
@@ -628,7 +833,11 @@ function parseTeeTimes(text) {
       j <= i + 20;
       j++
     ) {
-      if (timeRegex.test(lines[j])) {
+      if (
+        timeRegex.test(
+          lines[j]
+        )
+      ) {
         break;
       }
 
@@ -640,7 +849,9 @@ function parseTeeTimes(text) {
         break;
       }
 
-      detailLines.push(lines[j]);
+      detailLines.push(
+        lines[j]
+      );
     }
 
     const details =
@@ -665,10 +876,14 @@ function parseTeeTimes(text) {
 
     if (golferMatch) {
       holes =
-        Number(golferMatch[1]);
+        Number(
+          golferMatch[1]
+        );
 
       minGolfers =
-        Number(golferMatch[2]);
+        Number(
+          golferMatch[2]
+        );
 
       maxGolfers =
         Number(
@@ -677,7 +892,9 @@ function parseTeeTimes(text) {
         );
     }
 
-    if (maxGolfers === null) {
+    if (
+      maxGolfers === null
+    ) {
       const range =
         details.match(
           /\b(\d)\s*(?:-|to)\s*(\d)\s*(?:players?|golfers?)\b/i
@@ -685,14 +902,20 @@ function parseTeeTimes(text) {
 
       if (range) {
         minGolfers =
-          Number(range[1]);
+          Number(
+            range[1]
+          );
 
         maxGolfers =
-          Number(range[2]);
+          Number(
+            range[2]
+          );
       }
     }
 
-    if (maxGolfers === null) {
+    if (
+      maxGolfers === null
+    ) {
       const available =
         details.match(
           /\b(\d)\s*(?:players?|golfers?|spots?)\s*(?:available|open)?\b/i
@@ -708,13 +931,17 @@ function parseTeeTimes(text) {
       }
     }
 
-    if (maxGolfers === null) {
+    if (
+      maxGolfers === null
+    ) {
       continue;
     }
 
     if (
-      SETTINGS.players < minGolfers ||
-      SETTINGS.players > maxGolfers
+      SETTINGS.players <
+        minGolfers ||
+      SETTINGS.players >
+        maxGolfers
     ) {
       continue;
     }
@@ -772,7 +999,11 @@ function parseTeeTimes(text) {
 
 function loadSeenAlerts() {
   try {
-    if (!fs.existsSync(SEEN_FILE)) {
+    if (
+      !fs.existsSync(
+        SEEN_FILE
+      )
+    ) {
       return {};
     }
 
@@ -818,7 +1049,8 @@ async function sendNtfy(
 ) {
   const topic =
     (
-      process.env.NTFY_TOPIC ||
+      process.env
+        .NTFY_TOPIC ||
       ""
     ).trim();
 
@@ -832,9 +1064,13 @@ async function sendNtfy(
 
   const server =
     (
-      process.env.NTFY_SERVER ||
+      process.env
+        .NTFY_SERVER ||
       "https://ntfy.sh"
-    ).replace(/\/$/, "");
+    ).replace(
+      /\/$/,
+      ""
+    );
 
   const headers = {
     Title: title,
@@ -843,12 +1079,15 @@ async function sendNtfy(
   };
 
   if (clickUrl) {
-    headers.Click = clickUrl;
+    headers.Click =
+      clickUrl;
   }
 
   const response =
     await fetch(
-      `${server}/${encodeURIComponent(topic)}`,
+      `${server}/${encodeURIComponent(
+        topic
+      )}`,
       {
         method: "POST",
         headers,
@@ -867,14 +1106,19 @@ async function sendNtfy(
 
 async function sendManualTestAlert() {
   if (
-    process.env.GITHUB_EVENT_NAME !==
+    process.env
+      .GITHUB_EVENT_NAME !==
     "workflow_dispatch"
   ) {
     return;
   }
 
   if (
-    !(process.env.NTFY_TOPIC || "").trim()
+    !(
+      process.env
+        .NTFY_TOPIC ||
+      ""
+    ).trim()
   ) {
     return;
   }
@@ -901,13 +1145,17 @@ Courses: ${SETTINGS.courses.length}`
   }
 }
 
-async function sendNewMatchAlerts(matches) {
+async function sendNewMatchAlerts(
+  matches
+) {
   const seen =
     loadSeenAlerts();
 
   let alertsSent = 0;
 
-  for (const tee of matches) {
+  for (
+    const tee of matches
+  ) {
     const key =
       makeAlertKey(tee);
 
@@ -943,7 +1191,8 @@ Tap to open GolfNow`;
 
       if (sent) {
         seen[key] =
-          new Date().toISOString();
+          new Date()
+            .toISOString();
 
         alertsSent++;
 
@@ -971,7 +1220,9 @@ async function checkCourse(
   console.log(
     "========================================"
   );
-  console.log(course.name);
+  console.log(
+    course.name
+  );
   console.log(
     "========================================"
   );
@@ -1016,9 +1267,13 @@ async function checkCourse(
       }
     );
 
-    await page.waitForTimeout(5000);
+    await page.waitForTimeout(
+      5000
+    );
 
-    await dismissPrivacy(page);
+    await dismissPrivacy(
+      page
+    );
 
     const dateConfirmed =
       await setCourseDateWithArrows(
@@ -1047,7 +1302,9 @@ async function checkCourse(
       );
     }
 
-    await page.waitForTimeout(3500);
+    await page.waitForTimeout(
+      3500
+    );
 
     const validSheet =
       await validateFullTeeSheet(
@@ -1086,7 +1343,9 @@ async function checkCourse(
     const matches =
       parseTeeTimes(text);
 
-    if (!matches.length) {
+    if (
+      !matches.length
+    ) {
       console.log(
         `No matching tee times for ${SETTINGS.players} golfers between ${SETTINGS.earliest} and ${SETTINGS.latest}.`
       );
@@ -1095,7 +1354,9 @@ async function checkCourse(
         `FOUND ${matches.length} matching tee time(s).`
       );
 
-      for (const tee of matches) {
+      for (
+        const tee of matches
+      ) {
         console.log(
           `${tee.time} | ${tee.pricePerPerson} | golfers ${tee.minGolfers}-${tee.maxGolfers}`
         );
@@ -1103,9 +1364,16 @@ async function checkCourse(
     }
 
     return {
-      course: course.name,
-      bookingUrl: page.url(),
-      matches
+      course:
+        course.name,
+
+      bookingUrl:
+        page.url(),
+
+      matches,
+
+      error:
+        null
     };
   } catch (error) {
     console.log(
@@ -1138,9 +1406,16 @@ async function checkCourse(
     } catch (_) {}
 
     return {
-      course: course.name,
-      bookingUrl: page.url(),
-      matches: []
+      course:
+        course.name,
+
+      bookingUrl:
+        page.url(),
+
+      matches: [],
+
+      error:
+        error.message
     };
   } finally {
     await context.close();
@@ -1185,7 +1460,9 @@ async function main() {
   const courseResults = [];
 
   try {
-    for (const course of SETTINGS.courses) {
+    for (
+      const course of SETTINGS.courses
+    ) {
       courseResults.push(
         await checkCourse(
           browser,
@@ -1216,6 +1493,12 @@ async function main() {
         )
     );
 
+  const failedCourses =
+    courseResults.filter(
+      result =>
+        result.error
+    );
+
   console.log("");
   console.log(
     "========================================"
@@ -1227,23 +1510,57 @@ async function main() {
     "========================================"
   );
 
-  if (matches.length === 0) {
+  if (
+    failedCourses.length > 0
+  ) {
     console.log(
-      "No qualifying available tee times detected."
+      `WARNING: ${failedCourses.length} course(s) could not be checked:`
     );
+
+    for (
+      const result of failedCourses
+    ) {
+      console.log(
+        `${result.course}: ${result.error}`
+      );
+    }
+  }
+
+  if (
+    matches.length === 0
+  ) {
+    if (
+      failedCourses.length === 0
+    ) {
+      console.log(
+        "No qualifying available tee times detected."
+      );
+    } else {
+      console.log(
+        "No matches found, but the check was incomplete because one or more courses failed."
+      );
+    }
   } else {
-    for (const tee of matches) {
+    for (
+      const tee of matches
+    ) {
       console.log("");
-      console.log(tee.course);
+      console.log(
+        tee.course
+      );
+
       console.log(
         `${tee.date} at ${tee.time}`
       );
+
       console.log(
         `${tee.pricePerPerson} per person`
       );
+
       console.log(
         `${SETTINGS.players} golfers`
       );
+
       console.log(
         tee.bookingUrl
       );
@@ -1251,7 +1568,9 @@ async function main() {
   }
 
   const alertsSent =
-    await sendNewMatchAlerts(matches);
+    await sendNewMatchAlerts(
+      matches
+    );
 
   console.log(
     `New phone alerts sent: ${alertsSent}`
@@ -1263,7 +1582,8 @@ async function main() {
     JSON.stringify(
       {
         checkedAt:
-          new Date().toISOString(),
+          new Date()
+            .toISOString(),
 
         settings:
           SETTINGS,
@@ -1271,6 +1591,8 @@ async function main() {
         courseResults,
 
         matches,
+
+        failedCourses,
 
         alertsSent
       },
