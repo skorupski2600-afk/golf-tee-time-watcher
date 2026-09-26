@@ -2,7 +2,7 @@ const { chromium } = require("playwright");
 const fs = require("fs");
 
 const SETTINGS = {
-  date: "2026-10-2",
+  date: "2026-10-02",
   earliest: "7:00 AM",
   latest: "9:00 AM",
   players: 4,
@@ -42,16 +42,16 @@ const SETTINGS = {
 const SEEN_FILE = "seen-alerts.json";
 
 function timeToMinutes(value) {
-  const m = String(value)
+  const match = String(value)
     .trim()
     .toUpperCase()
     .match(/(\d{1,2}):(\d{2})\s*(AM|PM)/);
 
-  if (!m) return null;
+  if (!match) return null;
 
-  let hour = Number(m[1]);
-  const minute = Number(m[2]);
-  const ampm = m[3];
+  let hour = Number(match[1]);
+  const minute = Number(match[2]);
+  const ampm = match[3];
 
   if (ampm === "PM" && hour !== 12) hour += 12;
   if (ampm === "AM" && hour === 12) hour = 0;
@@ -60,14 +60,14 @@ function timeToMinutes(value) {
 }
 
 function normalizeTime(value) {
-  const m = String(value)
+  const match = String(value)
     .trim()
     .toUpperCase()
     .match(/(\d{1,2}):(\d{2})\s*(AM|PM)/);
 
-  if (!m) return null;
+  if (!match) return null;
 
-  return `${Number(m[1])}:${m[2]} ${m[3]}`;
+  return `${Number(match[1])}:${match[2]} ${match[3]}`;
 }
 
 function targetDateObject() {
@@ -79,17 +79,17 @@ function targetDateObject() {
 }
 
 function expectedDateText() {
-  const d = targetDateObject();
+  const date = targetDateObject();
 
-  const weekday = d.toLocaleDateString("en-US", {
+  const weekday = date.toLocaleDateString("en-US", {
     weekday: "short"
   });
 
-  const month = d.toLocaleDateString("en-US", {
+  const month = date.toLocaleDateString("en-US", {
     month: "short"
   });
 
-  return `${weekday}, ${month} ${d.getDate()}`;
+  return `${weekday}, ${month} ${date.getDate()}`;
 }
 
 function expectedLongDateText() {
@@ -118,30 +118,61 @@ function parsedDisplayedDateObject(text) {
 
   if (!match) return null;
 
-  const year = targetDateObject().getFullYear();
+  const target = targetDateObject();
 
-  const parsed = new Date(
-    `${match[2]} ${match[3]}, ${year} 12:00:00`
+  let year = target.getFullYear();
+
+  const monthNames = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec"
+  ];
+
+  const monthIndex = monthNames.findIndex(
+    month => month.toLowerCase() === match[2].toLowerCase()
   );
 
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+  if (monthIndex === -1) return null;
+
+  const parsed = new Date(
+    year,
+    monthIndex,
+    Number(match[3]),
+    12,
+    0,
+    0
+  );
+
+  return Number.isNaN(parsed.getTime())
+    ? null
+    : parsed;
 }
 
 function dayDifference(fromDate, toDate) {
-  const a = new Date(
+  const from = new Date(
     fromDate.getFullYear(),
     fromDate.getMonth(),
     fromDate.getDate()
   );
 
-  const b = new Date(
+  const to = new Date(
     toDate.getFullYear(),
     toDate.getMonth(),
     toDate.getDate()
   );
 
   return Math.round(
-    (b - a) / (24 * 60 * 60 * 1000)
+    (to - from) /
+      (24 * 60 * 60 * 1000)
   );
 }
 
@@ -164,11 +195,13 @@ async function dismissPrivacy(page) {
         .first();
 
       if (
-        await button.count() &&
-        await button.isVisible()
+        (await button.count()) &&
+        (await button.isVisible())
       ) {
         await button.click();
+
         await page.waitForTimeout(700);
+
         return;
       }
     } catch (_) {}
@@ -187,126 +220,41 @@ async function getDisplayedDateObject(page) {
   );
 }
 
-async function findDateNavigationContainer(page) {
-  const currentText = await getDisplayedDate(page);
+function escapeRegex(value) {
+  return String(value).replace(
+    /[.*+?^${}()|[\]\\]/g,
+    "\\$&"
+  );
+}
+
+async function findDisplayedDateLabel(page) {
+  const currentText =
+    await getDisplayedDate(page);
 
   if (!currentText) return null;
 
-  const label = page
-    .getByText(currentText, { exact: true })
-    .first();
+  const flexiblePattern = new RegExp(
+    escapeRegex(currentText)
+      .replace(/\\ /g, "\\s*")
+      .replace(/,/g, ",\\s*"),
+    "i"
+  );
 
-  if (!(await label.count())) {
-    return null;
-  }
+  try {
+    const matches =
+      page.getByText(flexiblePattern);
 
-  let container = label.locator("..");
-
-  for (let level = 0; level < 7; level++) {
-    try {
-      const controls = container.locator(
-        'button, a, [role="button"]'
-      );
-
-      if ((await controls.count()) >= 2) {
-        return container;
-      }
-
-      container = container.locator("..");
-    } catch (_) {}
-  }
-
-  return null;
-}
-
-async function clickDateArrow(page, direction) {
-  const before = await getDisplayedDate(page);
-
-  if (!before) {
-    console.log(
-      "Could not determine current displayed date."
+    const count = Math.min(
+      await matches.count(),
+      25
     );
 
-    return false;
-  }
-
-  const container =
-    await findDateNavigationContainer(page);
-
-  if (!container) {
-    console.log(
-      "Could not locate date navigation area."
-    );
-
-    return false;
-  }
-
-  const selectors =
-    direction === "next"
-      ? [
-          '[aria-label*="next" i]',
-          '[title*="next" i]',
-          '[aria-label*="right" i]',
-          '[title*="right" i]',
-          'button:has-text("Next")',
-          'a:has-text("Next")'
-        ]
-      : [
-          '[aria-label*="previous" i]',
-          '[aria-label*="prev" i]',
-          '[title*="previous" i]',
-          '[title*="prev" i]',
-          '[aria-label*="left" i]',
-          '[title*="left" i]',
-          'button:has-text("Previous")',
-          'a:has-text("Previous")'
-        ];
-
-  let chosen = null;
-
-  for (const selector of selectors) {
-    try {
-      const matches =
-        container.locator(selector);
-
-      const count =
-        await matches.count();
-
-      for (let i = 0; i < count; i++) {
-        const item =
-          matches.nth(i);
-
-        if (
-          await item
-            .isVisible()
-            .catch(() => false)
-        ) {
-          chosen = item;
-          break;
-        }
-      }
-
-      if (chosen) {
-        break;
-      }
-    } catch (_) {}
-  }
-
-  if (!chosen) {
-    const controls =
-      container.locator(
-        'button, a, [role="button"]'
-      );
-
-    const count =
-      await controls.count();
-
-    const candidates = [];
+    let best = null;
 
     for (let i = 0; i < count; i++) {
       try {
         const item =
-          controls.nth(i);
+          matches.nth(i);
 
         if (!(await item.isVisible())) {
           continue;
@@ -317,94 +265,512 @@ async function clickDateArrow(page, direction) {
 
         if (!box) continue;
 
-        const aria =
-          (await item.getAttribute(
-            "aria-label"
-          )) || "";
-
-        const title =
-          (await item.getAttribute(
-            "title"
-          )) || "";
-
-        const text =
-          await item
-            .innerText()
-            .catch(() => "");
-
-        const html =
-          await item
-            .innerHTML()
-            .catch(() => "");
-
-        candidates.push({
-          item,
-          box,
-          description:
-            `${aria} ${title} ${text} ${html}`
-              .trim()
-              .toLowerCase()
-        });
+        if (
+          !best ||
+          box.y < best.box.y
+        ) {
+          best = {
+            item,
+            box
+          };
+        }
       } catch (_) {}
     }
 
-    for (const candidate of candidates) {
-      if (
-        direction === "next" &&
-        /(next|right|forward|chevron-right|arrow-right)/i.test(
-          candidate.description
-        )
-      ) {
-        chosen =
-          candidate.item;
+    return best;
+  } catch (_) {
+    return null;
+  }
+}
 
-        break;
+async function findDateNavigationContainer(page) {
+  const dateLabel =
+    await findDisplayedDateLabel(page);
+
+  if (!dateLabel) {
+    return null;
+  }
+
+  let container =
+    dateLabel.item;
+
+  for (
+    let level = 0;
+    level < 9;
+    level++
+  ) {
+    try {
+      container =
+        container.locator("..");
+
+      const controls =
+        container.locator(
+          'button, a, [role="button"]'
+        );
+
+      const count =
+        await controls.count();
+
+      let visibleCount = 0;
+
+      for (
+        let i = 0;
+        i < Math.min(count, 15);
+        i++
+      ) {
+        try {
+          if (
+            await controls
+              .nth(i)
+              .isVisible()
+          ) {
+            visibleCount++;
+          }
+        } catch (_) {}
       }
 
-      if (
-        direction === "previous" &&
-        /(previous|prev|left|back|chevron-left|arrow-left)/i.test(
-          candidate.description
-        )
-      ) {
-        chosen =
-          candidate.item;
-
-        break;
+      if (visibleCount >= 2) {
+        return {
+          container,
+          dateBox:
+            dateLabel.box
+        };
       }
-    }
+    } catch (_) {}
+  }
+
+  return null;
+}
+
+async function collectNavigationCandidates(
+  page,
+  root,
+  dateBox
+) {
+  const controls =
+    root.locator(
+      'button, a, [role="button"]'
+    );
+
+  const count =
+    await controls.count();
+
+  const candidates = [];
+
+  for (
+    let i = 0;
+    i < Math.min(count, 250);
+    i++
+  ) {
+    try {
+      const item =
+        controls.nth(i);
+
+      if (!(await item.isVisible())) {
+        continue;
+      }
+
+      const box =
+        await item.boundingBox();
+
+      if (!box) continue;
+
+      const aria =
+        (await item.getAttribute(
+          "aria-label"
+        )) || "";
+
+      const title =
+        (await item.getAttribute(
+          "title"
+        )) || "";
+
+      const text =
+        await item
+          .innerText()
+          .catch(() => "");
+
+      const html =
+        await item
+          .innerHTML()
+          .catch(() => "");
+
+      const className =
+        (await item.getAttribute(
+          "class"
+        )) || "";
+
+      const description =
+        `${aria} ${title} ${text} ${html} ${className}`
+          .replace(/\s+/g, " ")
+          .trim()
+          .toLowerCase();
+
+      let proximity = null;
+
+      if (dateBox) {
+        const dateCenterX =
+          dateBox.x +
+          dateBox.width / 2;
+
+        const dateCenterY =
+          dateBox.y +
+          dateBox.height / 2;
+
+        const itemCenterX =
+          box.x +
+          box.width / 2;
+
+        const itemCenterY =
+          box.y +
+          box.height / 2;
+
+        proximity =
+          Math.sqrt(
+            Math.pow(
+              itemCenterX -
+                dateCenterX,
+              2
+            ) +
+              Math.pow(
+                itemCenterY -
+                  dateCenterY,
+                2
+              )
+          );
+      }
+
+      candidates.push({
+        item,
+        box,
+        description,
+        proximity
+      });
+    } catch (_) {}
+  }
+
+  return candidates;
+}
+
+function chooseDateArrow(
+  candidates,
+  direction,
+  dateBox
+) {
+  const scored =
+    candidates.map(
+      candidate => {
+        let score = 0;
+
+        const text =
+          candidate.description;
+
+        if (
+          direction === "next"
+        ) {
+          if (
+            /\bnext\b/i.test(text)
+          ) {
+            score += 1000;
+          }
+
+          if (
+            /\bright\b/i.test(text)
+          ) {
+            score += 700;
+          }
+
+          if (
+            /\bforward\b/i.test(text)
+          ) {
+            score += 700;
+          }
+
+          if (
+            /chevron[-_ ]?right/i.test(
+              text
+            )
+          ) {
+            score += 900;
+          }
+
+          if (
+            /arrow[-_ ]?right/i.test(
+              text
+            )
+          ) {
+            score += 900;
+          }
+        } else {
+          if (
+            /\bprevious\b/i.test(
+              text
+            )
+          ) {
+            score += 1000;
+          }
+
+          if (
+            /\bprev\b/i.test(text)
+          ) {
+            score += 900;
+          }
+
+          if (
+            /\bleft\b/i.test(text)
+          ) {
+            score += 700;
+          }
+
+          if (
+            /\bback\b/i.test(text)
+          ) {
+            score += 600;
+          }
+
+          if (
+            /chevron[-_ ]?left/i.test(
+              text
+            )
+          ) {
+            score += 900;
+          }
+
+          if (
+            /arrow[-_ ]?left/i.test(
+              text
+            )
+          ) {
+            score += 900;
+          }
+        }
+
+        if (
+          candidate.box.width <=
+            100 &&
+          candidate.box.height <=
+            100
+        ) {
+          score += 75;
+        }
+
+        if (
+          candidate.box.y < 1000
+        ) {
+          score += 40;
+        }
+
+        if (
+          candidate.proximity !==
+          null
+        ) {
+          if (
+            candidate.proximity <
+            100
+          ) {
+            score += 400;
+          } else if (
+            candidate.proximity <
+            200
+          ) {
+            score += 250;
+          } else if (
+            candidate.proximity <
+            350
+          ) {
+            score += 100;
+          }
+        }
+
+        if (dateBox) {
+          const dateCenterX =
+            dateBox.x +
+            dateBox.width / 2;
+
+          const itemCenterX =
+            candidate.box.x +
+            candidate.box.width /
+              2;
+
+          if (
+            direction === "next" &&
+            itemCenterX >
+              dateCenterX
+          ) {
+            score += 150;
+          }
+
+          if (
+            direction ===
+              "previous" &&
+            itemCenterX <
+              dateCenterX
+          ) {
+            score += 150;
+          }
+        }
+
+        return {
+          ...candidate,
+          score
+        };
+      }
+    );
+
+  scored.sort(
+    (a, b) =>
+      b.score - a.score
+  );
+
+  if (
+    scored.length &&
+    scored[0].score >= 300
+  ) {
+    return scored[0];
+  }
+
+  if (dateBox) {
+    const nearby =
+      scored
+        .filter(candidate => {
+          if (
+            candidate.box.width >
+              120 ||
+            candidate.box.height >
+              120
+          ) {
+            return false;
+          }
+
+          const verticalDifference =
+            Math.abs(
+              candidate.box.y -
+                dateBox.y
+            );
+
+          return (
+            verticalDifference <
+            150
+          );
+        })
+        .sort(
+          (a, b) =>
+            a.box.x - b.box.x
+        );
 
     if (
-      !chosen &&
-      candidates.length >= 2
+      nearby.length >= 2
     ) {
-      candidates.sort(
-        (a, b) =>
-          a.box.x - b.box.x
-      );
-
-      chosen =
-        direction === "next"
-          ? candidates[
-              candidates.length - 1
-            ].item
-          : candidates[0].item;
+      return direction === "next"
+        ? nearby[
+            nearby.length - 1
+          ]
+        : nearby[0];
     }
   }
 
-  if (!chosen) {
+  return null;
+}
+
+async function locateDateArrow(
+  page,
+  direction
+) {
+  const localNavigation =
+    await findDateNavigationContainer(
+      page
+    );
+
+  if (localNavigation) {
+    const candidates =
+      await collectNavigationCandidates(
+        page,
+        localNavigation.container,
+        localNavigation.dateBox
+      );
+
+    const chosen =
+      chooseDateArrow(
+        candidates,
+        direction,
+        localNavigation.dateBox
+      );
+
+    if (chosen) {
+      return chosen.item;
+    }
+  }
+
+  const dateLabel =
+    await findDisplayedDateLabel(
+      page
+    );
+
+  const globalCandidates =
+    await collectNavigationCandidates(
+      page,
+      page,
+      dateLabel
+        ? dateLabel.box
+        : null
+    );
+
+  const globalChoice =
+    chooseDateArrow(
+      globalCandidates,
+      direction,
+      dateLabel
+        ? dateLabel.box
+        : null
+    );
+
+  return globalChoice
+    ? globalChoice.item
+    : null;
+}
+
+async function clickDateArrow(
+  page,
+  direction
+) {
+  const before =
+    await getDisplayedDate(page);
+
+  if (!before) {
     console.log(
-      `Could not identify ${direction} date arrow.`
+      "Could not determine current displayed date."
     );
 
     return false;
   }
+
+  console.log(
+    `Looking for ${direction} date arrow from ${before}...`
+  );
 
   for (
     let attempt = 1;
     attempt <= 3;
     attempt++
   ) {
+    const chosen =
+      await locateDateArrow(
+        page,
+        direction
+      );
+
+    if (!chosen) {
+      console.log(
+        `Could not identify ${direction} date arrow on attempt ${attempt}.`
+      );
+
+      await page.waitForTimeout(
+        1000
+      );
+
+      continue;
+    }
+
     try {
       console.log(
         `Clicking ${direction} date arrow (attempt ${attempt})...`
@@ -420,17 +786,20 @@ async function clickDateArrow(page, direction) {
       });
 
       const deadline =
-        Date.now() + 10000;
+        Date.now() + 12000;
 
       while (
-        Date.now() < deadline
+        Date.now() <
+        deadline
       ) {
         await page.waitForTimeout(
           500
         );
 
         const after =
-          await getDisplayedDate(page);
+          await getDisplayedDate(
+            page
+          );
 
         if (
           after &&
@@ -443,6 +812,10 @@ async function clickDateArrow(page, direction) {
           return true;
         }
       }
+
+      console.log(
+        `Date did not change after attempt ${attempt}.`
+      );
     } catch (error) {
       console.log(
         `Date arrow attempt ${attempt} failed: ${error.message}`
@@ -455,20 +828,28 @@ async function clickDateArrow(page, direction) {
   }
 
   console.log(
-    `Date did not move from ${before}.`
+    `Could not move date forward from ${before}.`
   );
 
   return false;
 }
 
-async function setCourseDateWithArrows(page) {
+async function setCourseDateWithArrows(
+  page
+) {
   const target =
     targetDateObject();
 
   let current =
-    await getDisplayedDateObject(page);
+    await getDisplayedDateObject(
+      page
+    );
 
   if (!current) {
+    console.log(
+      "Could not determine GolfNow starting date."
+    );
+
     return false;
   }
 
@@ -486,7 +867,9 @@ async function setCourseDateWithArrows(page) {
     return true;
   }
 
-  if (Math.abs(diff) > 31) {
+  if (
+    Math.abs(diff) > 31
+  ) {
     console.log(
       "Requested date is more than 31 days away."
     );
@@ -525,6 +908,10 @@ async function setCourseDateWithArrows(page) {
       );
 
     if (!current) {
+      console.log(
+        "Could not read date after navigation."
+      );
+
       return false;
     }
 
@@ -538,13 +925,16 @@ async function setCourseDateWithArrows(page) {
   }
 
   const final =
-    await getDisplayedDate(page);
+    await getDisplayedDate(
+      page
+    );
 
   if (
-    final !== expectedDateText()
+    final !==
+    expectedDateText()
   ) {
     console.log(
-      `Final displayed date was ${final}, expected ${expectedDateText()}.`
+      `Final displayed date was ${final}; expected ${expectedDateText()}.`
     );
 
     return false;
@@ -586,7 +976,9 @@ async function clickViewTeeTimes(
     )
   ];
 
-  for (const locator of candidates) {
+  for (
+    const locator of candidates
+  ) {
     const count =
       Math.min(
         await locator.count(),
@@ -618,7 +1010,9 @@ async function clickViewTeeTimes(
         );
 
         const text =
-          await getPageText(page);
+          await getPageText(
+            page
+          );
 
         const courseWords =
           course.name
@@ -637,13 +1031,18 @@ async function clickViewTeeTimes(
           text.toLowerCase();
 
         const courseStillPresent =
-          courseWords.length === 0 ||
+          courseWords.length ===
+            0 ||
           courseWords.some(
             word =>
-              lower.includes(word)
+              lower.includes(
+                word
+              )
           );
 
-        if (!courseStillPresent) {
+        if (
+          !courseStillPresent
+        ) {
           return false;
         }
 
@@ -679,7 +1078,8 @@ async function validateFullTeeSheet(
       );
 
   const coursePresent =
-    importantCourseWords.length === 0 ||
+    importantCourseWords.length ===
+      0 ||
     importantCourseWords.some(
       word =>
         lower.includes(word)
@@ -694,8 +1094,12 @@ async function validateFullTeeSheet(
       .toLowerCase();
 
   const datePresent =
-    lower.includes(shortDate) ||
-    lower.includes(longDate) ||
+    lower.includes(
+      shortDate
+    ) ||
+    lower.includes(
+      longDate
+    ) ||
     lower.includes(
       SETTINGS.date
     );
@@ -720,9 +1124,7 @@ async function validateFullTeeSheet(
 }
 
 function normalizePrice(raw) {
-  if (!raw) {
-    return null;
-  }
+  if (!raw) return null;
 
   const cleaned =
     raw.replace(
@@ -770,14 +1172,13 @@ function parseTeeTimes(text) {
   const lines =
     text
       .split(/\r?\n/)
-      .map(
-        line =>
-          line
-            .replace(
-              /\u00a0/g,
-              " "
-            )
-            .trim()
+      .map(line =>
+        line
+          .replace(
+            /\u00a0/g,
+            " "
+          )
+          .trim()
       )
       .filter(Boolean);
 
@@ -802,7 +1203,9 @@ function parseTeeTimes(text) {
     i++
   ) {
     if (
-      !timeRegex.test(lines[i])
+      !timeRegex.test(
+        lines[i]
+      )
     ) {
       continue;
     }
@@ -855,7 +1258,9 @@ function parseTeeTimes(text) {
     }
 
     const details =
-      detailLines.join(" | ");
+      detailLines.join(
+        " | "
+      );
 
     if (
       /\b(SOLD|UNAVAILABLE)\b/i.test(
@@ -888,7 +1293,7 @@ function parseTeeTimes(text) {
       maxGolfers =
         Number(
           golferMatch[3] ||
-          golferMatch[2]
+            golferMatch[2]
         );
     }
 
@@ -986,7 +1391,9 @@ function parseTeeTimes(text) {
           tee.maxGolfers
         ].join("|");
 
-      if (seen.has(key)) {
+      if (
+        seen.has(key)
+      ) {
         return false;
       }
 
@@ -1212,6 +1619,36 @@ Tap to open GolfNow`;
   return alertsSent;
 }
 
+async function saveDebugFiles(
+  page,
+  safeName
+) {
+  try {
+    const text =
+      await getPageText(
+        page
+      );
+
+    fs.writeFileSync(
+      `${safeName}.txt`,
+      text,
+      "utf8"
+    );
+
+    fs.writeFileSync(
+      `${safeName}_url.txt`,
+      page.url(),
+      "utf8"
+    );
+
+    await page.screenshot({
+      path:
+        `${safeName}.png`,
+      fullPage: true
+    });
+  } catch (_) {}
+}
+
 async function checkCourse(
   browser,
   course
@@ -1261,7 +1698,6 @@ async function checkCourse(
       {
         waitUntil:
           "domcontentloaded",
-
         timeout:
           60000
       }
@@ -1280,7 +1716,9 @@ async function checkCourse(
         page
       );
 
-    if (!dateConfirmed) {
+    if (
+      !dateConfirmed
+    ) {
       throw new Error(
         "Could not set requested date."
       );
@@ -1319,29 +1757,19 @@ async function checkCourse(
     }
 
     const text =
-      await getPageText(page);
+      await getPageText(
+        page
+      );
 
-    await page.screenshot({
-      path:
-        `${safeName}.png`,
-
-      fullPage: true
-    });
-
-    fs.writeFileSync(
-      `${safeName}.txt`,
-      text,
-      "utf8"
-    );
-
-    fs.writeFileSync(
-      `${safeName}_url.txt`,
-      page.url(),
-      "utf8"
+    await saveDebugFiles(
+      page,
+      safeName
     );
 
     const matches =
-      parseTeeTimes(text);
+      parseTeeTimes(
+        text
+      );
 
     if (
       !matches.length
@@ -1372,8 +1800,7 @@ async function checkCourse(
 
       matches,
 
-      error:
-        null
+      error: null
     };
   } catch (error) {
     console.log(
@@ -1381,29 +1808,10 @@ async function checkCourse(
       error.message
     );
 
-    try {
-      const text =
-        await getPageText(page);
-
-      fs.writeFileSync(
-        `${safeName}.txt`,
-        text,
-        "utf8"
-      );
-
-      fs.writeFileSync(
-        `${safeName}_url.txt`,
-        page.url(),
-        "utf8"
-      );
-
-      await page.screenshot({
-        path:
-          `${safeName}.png`,
-
-        fullPage: true
-      });
-    } catch (_) {}
+    await saveDebugFiles(
+      page,
+      safeName
+    );
 
     return {
       course:
@@ -1461,7 +1869,8 @@ async function main() {
 
   try {
     for (
-      const course of SETTINGS.courses
+      const course of
+        SETTINGS.courses
     ) {
       courseResults.push(
         await checkCourse(
@@ -1511,14 +1920,16 @@ async function main() {
   );
 
   if (
-    failedCourses.length > 0
+    failedCourses.length >
+    0
   ) {
     console.log(
       `WARNING: ${failedCourses.length} course(s) could not be checked:`
     );
 
     for (
-      const result of failedCourses
+      const result of
+        failedCourses
     ) {
       console.log(
         `${result.course}: ${result.error}`
@@ -1530,7 +1941,8 @@ async function main() {
     matches.length === 0
   ) {
     if (
-      failedCourses.length === 0
+      failedCourses.length ===
+      0
     ) {
       console.log(
         "No qualifying available tee times detected."
