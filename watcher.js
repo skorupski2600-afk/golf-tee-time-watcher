@@ -63,8 +63,7 @@ function targetDateObject() {
 }
 
 function golfNowDateHash() {
-  const date =
-    targetDateObject();
+  const date = targetDateObject();
 
   const month =
     date.toLocaleDateString(
@@ -75,7 +74,9 @@ function golfNowDateHash() {
     );
 
   const day =
-    String(date.getDate()).padStart(
+    String(
+      date.getDate()
+    ).padStart(
       2,
       "0"
     );
@@ -253,16 +254,24 @@ function targetDateVisible(text) {
     targetDateObject();
 
   const monthLong =
-    date.toLocaleDateString(
-      "en-US",
-      { month: "long" }
-    ).toLowerCase();
+    date
+      .toLocaleDateString(
+        "en-US",
+        {
+          month: "long"
+        }
+      )
+      .toLowerCase();
 
   const monthShort =
-    date.toLocaleDateString(
-      "en-US",
-      { month: "short" }
-    ).toLowerCase();
+    date
+      .toLocaleDateString(
+        "en-US",
+        {
+          month: "short"
+        }
+      )
+      .toLowerCase();
 
   const day =
     date.getDate();
@@ -283,14 +292,17 @@ function targetDateVisible(text) {
       `${monthShort}\\s+0?${day}\\b`,
       "i"
     ),
+
     new RegExp(
       `${monthLong}\\s+0?${day}\\b`,
       "i"
     ),
+
     new RegExp(
       `0?${day}\\s+${monthLong}`,
       "i"
     ),
+
     new RegExp(
       `${monthShort}\\s+0?${day}\\s+${year}`,
       "i"
@@ -361,9 +373,7 @@ async function waitForTargetDate(page) {
   return false;
 }
 
-async function waitForTeeTimeInventory(
-  page
-) {
+async function waitForTeeTimeInventory(page) {
   const deadline =
     Date.now() + 20000;
 
@@ -455,30 +465,78 @@ async function validateCourse(
   return coursePresent;
 }
 
+/*
+ * GolfNow sometimes renders a price like:
+ *
+ * $60
+ * 00
+ *
+ * When page text is flattened, this can become:
+ *
+ * $6000
+ *
+ * This function converts:
+ * 6000 -> $60.00
+ * 7500 -> $75.00
+ * 8900 -> $89.00
+ */
 function normalizePrice(raw) {
   if (!raw) {
     return null;
   }
 
-  const match =
-    String(raw).match(
-      /\$?\s*(\d+(?:\.\d{1,2})?)/
-    );
+  const cleaned =
+    String(raw)
+      .replace(
+        /[^\d.]/g,
+        ""
+      )
+      .trim();
 
-  if (!match) {
+  if (!cleaned) {
     return null;
   }
-
-  const value =
-    Number(match[1]);
 
   if (
-    !Number.isFinite(value)
+    cleaned.includes(".")
   ) {
-    return null;
+    const value =
+      Number(cleaned);
+
+    return Number.isFinite(
+      value
+    )
+      ? `$${value.toFixed(2)}`
+      : null;
   }
 
-  return `$${value.toFixed(2)}`;
+  if (
+    cleaned.length >= 3
+  ) {
+    const cents =
+      Number(cleaned);
+
+    if (
+      !Number.isFinite(
+        cents
+      )
+    ) {
+      return null;
+    }
+
+    return `$${(
+      cents / 100
+    ).toFixed(2)}`;
+  }
+
+  const dollars =
+    Number(cleaned);
+
+  return Number.isFinite(
+    dollars
+  )
+    ? `$${dollars.toFixed(2)}`
+    : null;
 }
 
 function parseTeeTimes(text) {
@@ -650,14 +708,6 @@ function parseTeeTimes(text) {
       }
     }
 
-    /*
-     * If GolfNow explicitly lists player availability,
-     * enforce the 4-player requirement.
-     *
-     * If GolfNow does not expose player-count text in
-     * the rendered card, keep the tee time rather than
-     * silently throwing it away.
-     */
     if (
       maxGolfers !== null
     ) {
@@ -671,6 +721,14 @@ function parseTeeTimes(text) {
       }
     }
 
+    /*
+     * GolfNow may flatten:
+     *
+     * $60
+     * 00
+     *
+     * into "$6000".
+     */
     const priceMatch =
       details.match(
         /\$\s*\d+(?:\.\d{1,2})?/
@@ -914,7 +972,7 @@ async function sendNewMatchAlerts(
     const message =
 `${tee.course}
 ${tee.date} at ${tee.time}
-${tee.pricePerPerson}
+${tee.pricePerPerson} per person
 ${golferText}
 ${holes}
 
@@ -988,9 +1046,11 @@ async function checkCourse(
   console.log(
     "========================================"
   );
+
   console.log(
     course.name
   );
+
   console.log(
     "========================================"
   );
@@ -1178,12 +1238,15 @@ async function checkCourse(
 
 async function main() {
   console.log("");
+
   console.log(
     "========================================"
   );
+
   console.log(
     "GOLF TEE TIME WATCHER"
   );
+
   console.log(
     "========================================"
   );
@@ -1259,12 +1322,15 @@ async function main() {
     );
 
   console.log("");
+
   console.log(
     "========================================"
   );
+
   console.log(
     "FINAL RESULTS"
   );
+
   console.log(
     "========================================"
   );
@@ -1306,6 +1372,7 @@ async function main() {
       matches
     ) {
       console.log("");
+
       console.log(
         tee.course
       );
@@ -1315,7 +1382,7 @@ async function main() {
       );
 
       console.log(
-        tee.pricePerPerson
+        `${tee.pricePerPerson} per person`
       );
 
       console.log(
